@@ -21,7 +21,7 @@ The GTK and Cairo globe reuses the upstream map tiles, rotation, and opening sca
 
 The GTK4 keyboard ports the input behavior and visual hierarchy of EdexUi-2026 at [`2321bd5`](https://github.com/Ali-A-Alwahed/EdexUi-2026/tree/2321bd5). The upstream references are [`keyboard.class.js`](https://github.com/Ali-A-Alwahed/EdexUi-2026/blob/2321bd5/src/classes/keyboard.class.js) and [`keyboard.css`](https://github.com/Ali-A-Alwahed/EdexUi-2026/blob/2321bd5/src/assets/css/keyboard.css). Key layouts come from the original JSON files already bundled in `assets/keyboards/`.
 
-GTK overlays reproduce the original main/Shift/Alt/Alt+Shift/Fn legend positions, split Enter, wider edge keys and spacebar. Hardware keydown holds the active highlight; keyup triggers the upstream 100ms blink (approximated with GTK timeouts because the Chromium CSS keyframe is not directly supported). Authentication mode keeps the keyboard visible and dimmed, without disclosing pressed keys. Visible outlines on ordinary keys are an intentional eDEX-Remake customization requested after the initial port; the upstream default outlines only selected keys.
+GTK overlays reproduce the original main/Shift/Alt/Alt+Shift/Fn legend positions, split Enter, wider edge keys and spacebar. Hardware keydown holds the active highlight; keyup triggers the upstream 100ms blink (approximated with GTK timeouts because the Chromium CSS keyframe is not directly supported). Authentication mode keeps the keyboard visible and dimmed, without disclosing pressed keys. Ordinary character keys now follow the upstream outline-free style, while Spacebar, Enter, and arrow keys retain visible borders. The Spacebar is intentionally taller than upstream.
 
 ## Features
 
@@ -30,7 +30,7 @@ GTK overlays reproduce the original main/Shift/Alt/Alt+Shift/Fn legend positions
 - **Terminal tabs** — The tab bar hides three seconds after the pointer leaves the top of the terminal. Hover there to reveal it. Select **+** or press `Ctrl+Shift+T` to open a tab in the current directory. Scroll the list horizontally when the tabs outgrow the available space.
 - **Files and apps** — SYSTEM’s **Files** view follows the active terminal’s working directory, including fish sessions. Clicking a folder at a shell prompt clears the current input line and changes directory. Search files and installed apps, toggle dotfiles, preview images, fonts, PDFs, audio and video, and edit UTF-8 text files.
 - **Appearance and input** — Includes 21 upstream themes, 18 keyboard layouts, the boot log and glitch sequence, and sound effects for physical and on-screen keys. Terminal color schemes include **Follow theme**, Catppuccin Latte, Frappé, Macchiato, and Mocha, Nord, and **Custom**. Custom swatches let you set text, background, cursor, selection, and all 16 ANSI colors. [Catppuccin](https://github.com/catppuccin/alacritty) · [Nord](https://www.nordtheme.com/docs/colors-and-palettes/)
-- **Password prompts** — The on-screen keyboard hides automatically during supported prompts such as `sudo`, `su`, and `systemd-ask-password` in the active terminal. It returns when normal input resumes. Use `Ctrl+Shift+P` to hide it manually when a remote or nested terminal does not report its echo state to the local PTY.
+- **Password prompts** — The on-screen keyboard dims and disables key highlights during supported prompts such as `sudo`, `su`, and `systemd-ask-password` in the active terminal. It returns to normal when the prompt ends. Use `Ctrl+Shift+P` to toggle manual privacy mode when a remote or nested terminal does not report its echo state to the local PTY.
 
 While **Audio effects** is enabled, eDEX-Remake keeps the SDL3 playback device active between key presses to avoid gaps when the output wakes up.
 
@@ -50,6 +50,28 @@ PDF previews require Poppler. Audio and video previews use GTK’s GStreamer bac
 ```bash
 sudo pacman -S --needed poppler gst-plugins-base gst-plugins-good
 ```
+
+## GitHub Actions: builds and releases
+
+The [native build workflow](.github/workflows/build-release.yml) builds on pushes to `main`, pull requests, and manual `workflow_dispatch` runs. Successful CI jobs upload `.tar.gz` archives to the workflow run's **Artifacts** section (14-day retention). These contain `edex-native`, `assets/`, the license, and the README.
+
+| Archive | Build environment | Support |
+| --- | --- | --- |
+| `eDEX-Remake-linux-x86_64-debian13.tar.gz` | Debian 13 x86_64 | Linux, GTK4/VTE/SDL3 shared libraries required |
+| `eDEX-Remake-linux-aarch64-debian13.tar.gz` | Debian 13 ARM64 | Linux ARM64, GTK4/VTE/SDL3 shared libraries required |
+| `eDEX-Remake-linux-x86_64-arch.tar.gz` | Current Arch Linux x86_64 | Arch Linux, install system GTK4/VTE/SDL3 packages |
+| `eDEX-Remake-macos-arm64-experimental.tar.gz` | macOS 15 Apple Silicon | Experimental build; not an independent signed `.app` and Linux-specific metrics are not ported |
+
+Linux archives contain **dynamically linked executables**, not fully static or distribution-independent binaries. On Debian 13, install runtime dependencies with `sudo apt install libgtk-4-1 libvte-2.91-gtk4-0 libsdl3-0 fontconfig`; on Arch, use `sudo pacman -S --needed gtk4 vte4 sdl3 fontconfig`. On macOS, Homebrew `gtk4 vte3 sdl3 fontconfig` must be installed before running the experimental binary. Runtime GTK and media extensions may need additional packages.
+
+To create a versioned GitHub Release, push an annotated tag beginning with `v`:
+
+```bash
+git tag -a v0.5.4 -m "eDEX-Remake v0.5.4"
+git push origin v0.5.4
+```
+
+The tag workflow publishes successful platform archives and a `SHA256SUMS` file. macOS build failures are non-blocking because native macOS runtime compatibility has not been verified. **Windows builds are not yet available:** this version relies on Unix PTYs and Linux-specific `/proc` and `/sys` APIs, so a working Windows port must come before a Windows workflow.
 
 ## Settings and shortcuts
 
