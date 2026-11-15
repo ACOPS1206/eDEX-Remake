@@ -203,9 +203,13 @@ button.virtual-key.key-enter-lower { border-top-color: transparent; margin-left:
 .opening-log { padding: 8px 10px; font-family: monospace; font-size: 15px; }
 
 
-/* Original-inspired two-step key feedback: flash, pause, faint echo. */
+/* Keep only a narrow gutter between keys, including between rows. */
 button.virtual-key {
     border-color: alpha(@accent, 0.42);
+    margin-top: 3px;
+    margin-bottom: 3px;
+    padding-top: 3px;
+    padding-bottom: 3px;
 }
 button.virtual-key:hover {
     border-color: alpha(@accent, 0.66);
@@ -227,6 +231,8 @@ button.virtual-key.key-flash .key-shift {
 }
 .focus-keyboard button.virtual-key {
     border-color: alpha(@accent, 0.30);
+    margin-top: 0;
+    margin-bottom: 0;
 }
 .focus-keyboard button.virtual-key.key-flash {
     background: @accent;
