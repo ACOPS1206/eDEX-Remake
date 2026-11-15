@@ -17,6 +17,12 @@ This comparison uses EdexUi-2026 2026.4.22 at the [`2321bd5` commit](https://git
 
 The GTK and Cairo globe reuses the upstream map tiles, rotation, and opening scan. Tile blending, particles, and text rendering differ from the WebGL version. The theme converter handles a subset of `injectCSS`, including panel colors and opacity, text size and spacing, corner radius, and selected layout rules. Chromium-specific selectors, media queries, and external URL rules have limited compatibility. Screen comparisons used a software-rendered 1920×1080 Cage session.
 
+## Keyboard source fidelity
+
+The GTK4 keyboard ports the input behavior and visual hierarchy of EdexUi-2026 at [`2321bd5`](https://github.com/Ali-A-Alwahed/EdexUi-2026/tree/2321bd5). The upstream references are [`keyboard.class.js`](https://github.com/Ali-A-Alwahed/EdexUi-2026/blob/2321bd5/src/classes/keyboard.class.js) and [`keyboard.css`](https://github.com/Ali-A-Alwahed/EdexUi-2026/blob/2321bd5/src/assets/css/keyboard.css). Key layouts come from the original JSON files already bundled in `assets/keyboards/`.
+
+GTK overlays reproduce the original main/Shift/Alt/Alt+Shift/Fn legend positions, split Enter, wider edge keys and spacebar. Hardware keydown holds the active highlight; keyup triggers the upstream 100ms blink (approximated with GTK timeouts because the Chromium CSS keyframe is not directly supported). Authentication mode keeps the keyboard visible and dimmed, without disclosing pressed keys. Visible outlines on ordinary keys are an intentional eDEX-Remake customization requested after the initial port; the upstream default outlines only selected keys.
+
 ## Features
 
 - **System monitoring** — Track CPU utilization, frequency and temperature, memory, swap, disk usage, mounts, uptime, and battery. A 40×11 dot display distinguishes used, reclaimable, and available memory. Sort the process table by PID, name, CPU, memory, and other columns.
