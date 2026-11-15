@@ -522,7 +522,11 @@ fn create_session(
     session.terminal.add_controller(key);
     let sound_on_output = sounds.clone();
     let last_feedback = Cell::new(std::time::Instant::now());
-    session.terminal.connect_contents_changed(move |_| {
+    session.terminal.connect_contents_changed(move |terminal| {
+        // Do not turn password-feedback characters into an audible side channel.
+        if password_input(terminal) {
+            return;
+        }
         if last_feedback.get().elapsed() >= std::time::Duration::from_millis(140) {
             last_feedback.set(std::time::Instant::now());
             sound_on_output.play("stdout");
