@@ -192,10 +192,15 @@ fn size_workspace(
     height: i32,
 ) {
     let sidebar_width = (width * 16 / 100).max(180);
+    // EdexUi-2026 keyboard.css:
+    // 5 rows × (5.28vh row + 0.46vh top/bottom margins) = 31vh.
+    // The special focus theme intentionally retains its compact 108px dock.
     let dock_height = if layout.focus {
         108
+    } else if height <= 1 {
+        235 // Before the first viewport size is known.
     } else {
-        (height * 31 / 100).max(108)
+        (height * 31 / 100).max(1)
     };
     let narrow = width * 3 <= height * 4;
     let position = width
