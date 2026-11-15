@@ -579,7 +579,9 @@ pub fn size_to_source(
     let spacebar = vh * 0.4768;
     let gutter = vh * 0.0046;
     let regular_height = vw * 0.027;
-    let space_height = vh * 0.0352;
+    // The source uses 3.52vh; increase only the spacebar to 4.5vh
+    // as requested, keeping it within the 5.28vh key-row envelope.
+    let space_height = vh * 0.045;
     let enter_lower_height = vh * 0.06389;
     let row_height = vh * 0.0528;
     let row_pitch = vh * 0.062; // 5.28vh row + 2 × 0.46vh margin
