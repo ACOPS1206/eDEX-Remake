@@ -22,27 +22,55 @@ static COMPOSE: LazyLock<ComposeTable> = LazyLock::new(|| {
 
 pub struct Keyboard {
     pub view: gtk::Box,
-    private: Rc<Cell<bool>>,
+    feedback: Rc<Feedback>,
     controller: gtk::EventControllerKey,
 }
 
 impl Keyboard {
     pub fn password_mode(&self) -> bool {
-        self.private.get()
+        self.feedback.manual.get()
     }
 
     pub fn detach(&self, window: &gtk::ApplicationWindow) {
         window.remove_controller(&self.controller);
     }
 
-    pub fn toggle_password_mode(&self) {
-        let active = !self.private.get();
-        self.private.set(active);
-        if active {
-            self.view.add_css_class("password-mode");
-        } else {
-            self.view.remove_css_class("password-mode");
+    pub fn set_password_mode(&self, active: bool, tabs: &Terminals) {
+        self.feedback.manual.set(active);
+        self.refresh(tabs);
+    }
+
+    pub fn refresh(&self, tabs: &Terminals) {
+        self.feedback.refresh(tabs);
+    }
+}
+
+struct Feedback {
+    view: glib::WeakRef<gtk::Box>,
+    manual: Cell<bool>,
+    pressed: RefCell<HashMap<u32, glib::WeakRef<gtk::Widget>>>,
+    modifiers: Modifiers,
+    pending: RefCell<Vec<String>>,
+}
+
+impl Feedback {
+    fn refresh(&self, tabs: &Terminals) -> bool {
+        let hidden = self.manual.get() || tabs.password_input();
+        if let Some(view) = self.view.upgrade() {
+            if view.is_visible() == hidden {
+                view.set_visible(!hidden);
+                if hidden {
+                    for (_, widget) in self.pressed.borrow_mut().drain() {
+                        if let Some(widget) = widget.upgrade() {
+                            widget.remove_css_class("key-active");
+                        }
+                    }
+                    reset(&self.modifiers);
+                    self.pending.borrow_mut().clear();
+                }
+            }
         }
+        hidden
     }
 }
 
@@ -56,9 +84,13 @@ pub fn panel(
     keyboard.add_css_class("virtual-keyboard");
     keyboard.set_homogeneous(true);
     keyboard.set_vexpand(true);
-    let modifiers = Rc::new(Modifiers::default());
-    let pending = Rc::new(RefCell::new(Vec::new()));
-    let password = Rc::new(Cell::new(false));
+    let feedback = Rc::new(Feedback {
+        view: keyboard.downgrade(),
+        manual: Cell::new(false),
+        pressed: RefCell::new(HashMap::new()),
+        modifiers: Modifiers::default(),
+        pending: RefCell::new(Vec::new()),
+    });
     let mut indicators = HashMap::<String, glib::WeakRef<gtk::Widget>>::new();
     for row in ROWS {
         let Some(keys) = layout[row].as_array() else {
@@ -95,9 +127,18 @@ pub fn panel(
                 button.set_valign(gtk::Align::Center);
                 button.set_vexpand(true);
                 button.set_focusable(false);
-                let feedback = sounds.clone();
-                button.connect_clicked(move |_| feedback.play("stdin"));
-                modifiers.borrow_mut().push((kind, button.downgrade()));
+                let key_feedback = feedback.clone();
+                let tabs = tabs.clone();
+                let sounds = sounds.clone();
+                button.connect_clicked(move |_| {
+                    if !key_feedback.refresh(&tabs) {
+                        sounds.play("stdin");
+                    }
+                });
+                feedback
+                    .modifiers
+                    .borrow_mut()
+                    .push((kind, button.downgrade()));
                 let widget = button.clone().upcast::<gtk::Widget>();
                 indicators
                     .entry(kind.to_owned())
@@ -157,12 +198,16 @@ pub fn panel(
                     }
                 }
                 let tabs = tabs.clone();
-                let mods = modifiers.clone();
-                let pending = pending.clone();
+                let feedback = feedback.clone();
                 let sounds = sounds.clone();
                 let window = window.downgrade();
                 button.connect_clicked(move |_| {
+                    if feedback.refresh(&tabs) {
+                        return;
+                    }
                     sounds.play("stdin");
+                    let mods = &feedback.modifiers;
+                    let pending = &feedback.pending;
                     let active = |kind| {
                         mods.borrow().iter().any(|(flag, button)| {
                             *flag == kind
@@ -190,7 +235,7 @@ pub fn panel(
                                 held,
                             )
                         }) {
-                            reset(&mods);
+                            reset(mods);
                             return;
                         }
                     }
@@ -235,7 +280,7 @@ pub fn panel(
                             tabs.write(decode(&command).as_bytes());
                         }
                     }
-                    reset(&mods);
+                    reset(mods);
                 });
                 grid.attach(&button, column, 0, span, 1);
             }
@@ -245,12 +290,10 @@ pub fn panel(
     }
     let register = gtk::EventControllerKey::new();
     register.set_propagation_phase(gtk::PropagationPhase::Capture);
-    let indicators = Rc::new(indicators);
-    let pressed = Rc::new(RefCell::new(HashMap::new()));
-    let held = pressed.clone();
-    let private = password.clone();
+    let held = feedback.clone();
+    let active_tabs = tabs.clone();
     register.connect_key_pressed(move |_, key, code, _| {
-        if !private.get() {
+        if !held.refresh(&active_tabs) {
             let name = match key {
                 gdk::Key::Return | gdk::Key::KP_Enter => "\r".to_owned(),
                 gdk::Key::BackSpace => "\u{8}".to_owned(),
@@ -262,20 +305,26 @@ pub fn panel(
             };
             if let Some(widget) = indicators.get(&name).and_then(glib::WeakRef::upgrade) {
                 widget.add_css_class("key-active");
-                held.borrow_mut().insert(code, widget);
+                held.pressed.borrow_mut().insert(code, widget.downgrade());
             }
         }
         glib::Propagation::Proceed
     });
+    let released = feedback.clone();
     register.connect_key_released(move |_, _, code, _| {
-        if let Some(widget) = pressed.borrow_mut().remove(&code) {
+        if let Some(widget) = released
+            .pressed
+            .borrow_mut()
+            .remove(&code)
+            .and_then(|widget| widget.upgrade())
+        {
             widget.remove_css_class("key-active");
         }
     });
     window.add_controller(register.clone());
     Keyboard {
         view: keyboard,
-        private: password,
+        feedback,
         controller: register,
     }
 }

@@ -119,8 +119,6 @@ button.virtual-key.key-active, button.virtual-key:checked, button.virtual-key:ac
     background: @accent;
     color: @shade;
 }
-.virtual-keyboard.password-mode { opacity: 0.5; }
-.virtual-keyboard.password-mode button.virtual-key:active { background: transparent; color: @accent; }
 .key-shift { font-size: 13px; }
 .filesystem-panel .file-tile { background: transparent; }
 .filesystem-panel .file-tile:hover { background: alpha(@accent,0.12); }

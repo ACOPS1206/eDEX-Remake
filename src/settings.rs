@@ -646,7 +646,7 @@ pub fn shortcuts(parent: &gtk::ApplicationWindow) {
         ("Ctrl+Shift+S / K", "Settings / shortcuts"),
         ("Ctrl+Shift+A / F", "App Manager / file search"),
         ("Ctrl+Shift+L / H", "File list / dotfiles"),
-        ("Ctrl+Shift+P", "Keyboard password mode"),
+        ("Ctrl+Shift+P", "Toggle on-screen keyboard privacy"),
         ("F9 / F10 / F11", "Bottom panels / side panels / fullscreen"),
         ("Ctrl+Shift+Q", "Quit"),
     ];

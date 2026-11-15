@@ -434,14 +434,25 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
         &sizing,
     );
     workspace.apply(prefs);
+    let keyboard_state = std::rc::Rc::downgrade(&keyboard);
+    let authentication_tabs = tabs.clone();
+    glib::timeout_add_local(Duration::from_millis(50), move || {
+        let Some(keyboard) = keyboard_state.upgrade() else {
+            return glib::ControlFlow::Break;
+        };
+        keyboard.borrow().refresh(&authentication_tabs);
+        glib::ControlFlow::Continue
+    });
     let password = keyboard.clone();
+    let password_tabs = tabs.clone();
     bind(
         app,
         &window,
         "password-mode",
         &["<Primary><Shift>p"],
         move || {
-            password.borrow().toggle_password_mode();
+            let keyboard = password.borrow();
+            keyboard.set_password_mode(!keyboard.password_mode(), &password_tabs);
         },
     );
     let selected_keyboard = gio::SimpleAction::new_stateful(
@@ -464,9 +475,7 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
         };
         let next = keyboard::panel(&layout, &key_tabs, &window, &key_sounds);
         let mut previous = keyboard.borrow_mut();
-        if previous.password_mode() {
-            next.toggle_password_mode();
-        }
+        next.set_password_mode(previous.password_mode(), &key_tabs);
         previous.detach(&window);
         keyboard_holder.remove(&previous.view);
         keyboard_holder.append(&next.view);

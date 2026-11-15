@@ -268,6 +268,11 @@ impl Terminals {
     pub fn cwd(&self) -> Option<PathBuf> {
         self.active()?.cwd()
     }
+
+    pub fn password_input(&self) -> bool {
+        self.active()
+            .is_some_and(|session| password_input(&session.terminal))
+    }
     pub fn focus(&self) {
         if let Some(session) = self.active() {
             session.terminal.grab_focus();
@@ -310,6 +315,42 @@ impl Terminals {
     pub fn switch(&self, page: u32) {
         self.view.set_current_page(Some(page));
     }
+}
+
+fn password_input(terminal: &Terminal) -> bool {
+    use std::{mem::MaybeUninit, os::fd::AsRawFd};
+
+    let Some(pty) = terminal.pty() else {
+        return false;
+    };
+    let fd = pty.fd().as_raw_fd();
+    let mut mode = MaybeUninit::<libc::termios>::uninit();
+    // Linux exposes the slave's terminal settings through the PTY master.
+    if unsafe { libc::tcgetattr(fd, mode.as_mut_ptr()) } != 0 {
+        return false;
+    }
+    let mode = unsafe { mode.assume_init() };
+    let local = mode.c_lflag;
+    if local & libc::ECHO != 0 {
+        return false;
+    }
+    // Password readers normally keep canonical input. sudo's pwfeedback mode
+    // uses cbreak, preserving signal handling and the normal CR-to-NL input mapping.
+    if local & libc::ICANON != 0
+        || (local & (libc::ISIG | libc::IEXTEN) == libc::ISIG && mode.c_iflag & libc::ICRNL != 0)
+    {
+        return true;
+    }
+    // Dedicated password readers can disable all terminal line processing.
+    // Linux limits the process name reported by /proc to 15 bytes.
+    let group = unsafe { libc::tcgetpgrp(fd) };
+    group > 0
+        && fs::read_to_string(format!("/proc/{group}/comm")).is_ok_and(|name| {
+            matches!(
+                name.trim_end(),
+                "systemd-ask-pas" | "pinentry-tty" | "pinentry-curses"
+            )
+        })
 }
 
 impl Session {
@@ -468,8 +509,14 @@ fn create_session(
     let sounds_on_key = sounds.clone();
     let key = gtk::EventControllerKey::new();
     key.set_propagation_phase(gtk::PropagationPhase::Capture);
-    key.connect_key_pressed(move |_, _, _, _| {
-        sounds_on_key.play("stdin");
+    key.connect_key_pressed(move |controller, _, _, _| {
+        if controller
+            .widget()
+            .and_downcast::<Terminal>()
+            .is_some_and(|terminal| !password_input(&terminal))
+        {
+            sounds_on_key.play("stdin");
+        }
         glib::Propagation::Proceed
     });
     session.terminal.add_controller(key);
