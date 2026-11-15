@@ -5,6 +5,7 @@ use std::{
     collections::HashMap,
     rc::Rc,
     sync::LazyLock,
+    time::Duration,
 };
 use vte4::gtk::{self, gdk, glib, prelude::*};
 
@@ -49,6 +50,8 @@ struct Feedback {
     view: glib::WeakRef<gtk::Box>,
     manual: Cell<bool>,
     pressed: RefCell<HashMap<u32, glib::WeakRef<gtk::Widget>>>,
+    pulses: RefCell<HashMap<usize, (u64, glib::WeakRef<gtk::Widget>)>>,
+    next_pulse: Cell<u64>,
     modifiers: Modifiers,
     pending: RefCell<Vec<String>>,
 }
@@ -60,9 +63,11 @@ impl Feedback {
             if view.is_visible() == hidden {
                 view.set_visible(!hidden);
                 if hidden {
-                    for (_, widget) in self.pressed.borrow_mut().drain() {
+                    self.pressed.borrow_mut().clear();
+                    for (_, (_, widget)) in self.pulses.borrow_mut().drain() {
                         if let Some(widget) = widget.upgrade() {
-                            widget.remove_css_class("key-active");
+                            widget.remove_css_class("key-flash");
+                            widget.remove_css_class("key-echo");
                         }
                     }
                     reset(&self.modifiers);
@@ -71,6 +76,54 @@ impl Feedback {
             }
         }
         hidden
+    }
+
+    fn pulse(self: &Rc<Self>, widget: &gtk::Widget) {
+        let key = widget.as_ptr() as usize;
+        let sequence = self.next_pulse.get().wrapping_add(1);
+        self.next_pulse.set(sequence);
+        self.pulses
+            .borrow_mut()
+            .insert(key, (sequence, widget.downgrade()));
+
+        widget.remove_css_class("key-echo");
+        widget.add_css_class("key-flash");
+
+        // First, a bright flash; then a short pause and a weaker afterglow.
+        // A sequence ID prevents old timeouts from cancelling a newer press.
+        for (delay_ms, echo, finished) in [
+            (95, false, false),
+            (145, true, false),
+            (255, false, true),
+        ] {
+            let feedback = Rc::downgrade(self);
+            let weak_widget = widget.downgrade();
+            glib::timeout_add_local_once(Duration::from_millis(delay_ms), move || {
+                let Some(feedback) = feedback.upgrade() else {
+                    return;
+                };
+                if !feedback
+                    .pulses
+                    .borrow()
+                    .get(&key)
+                    .is_some_and(|(current, _)| *current == sequence)
+                {
+                    return;
+                }
+
+                if let Some(widget) = weak_widget.upgrade() {
+                    widget.remove_css_class("key-flash");
+                    if echo {
+                        widget.add_css_class("key-echo");
+                    } else {
+                        widget.remove_css_class("key-echo");
+                    }
+                }
+                if finished {
+                    feedback.pulses.borrow_mut().remove(&key);
+                }
+            });
+        }
     }
 }
 
@@ -88,6 +141,8 @@ pub fn panel(
         view: keyboard.downgrade(),
         manual: Cell::new(false),
         pressed: RefCell::new(HashMap::new()),
+        pulses: RefCell::new(HashMap::new()),
+        next_pulse: Cell::new(0),
         modifiers: Modifiers::default(),
         pending: RefCell::new(Vec::new()),
     });
@@ -130,8 +185,9 @@ pub fn panel(
                 let key_feedback = feedback.clone();
                 let tabs = tabs.clone();
                 let sounds = sounds.clone();
-                button.connect_clicked(move |_| {
+                button.connect_clicked(move |button| {
                     if !key_feedback.refresh(&tabs) {
+                        key_feedback.pulse(button.upcast_ref::<gtk::Widget>());
                         sounds.play("stdin");
                     }
                 });
@@ -201,10 +257,11 @@ pub fn panel(
                 let feedback = feedback.clone();
                 let sounds = sounds.clone();
                 let window = window.downgrade();
-                button.connect_clicked(move |_| {
+                button.connect_clicked(move |button| {
                     if feedback.refresh(&tabs) {
                         return;
                     }
+                    feedback.pulse(button.upcast_ref::<gtk::Widget>());
                     sounds.play("stdin");
                     let mods = &feedback.modifiers;
                     let pending = &feedback.pending;
@@ -304,22 +361,18 @@ pub fn panel(
                 _ => key.to_unicode().map(String::from).unwrap_or_default(),
             };
             if let Some(widget) = indicators.get(&name).and_then(glib::WeakRef::upgrade) {
-                widget.add_css_class("key-active");
-                held.pressed.borrow_mut().insert(code, widget.downgrade());
+                let mut pressed = held.pressed.borrow_mut();
+                if let std::collections::hash_map::Entry::Vacant(entry) = pressed.entry(code) {
+                    entry.insert(widget.downgrade());
+                    held.pulse(&widget);
+                }
             }
         }
         glib::Propagation::Proceed
     });
     let released = feedback.clone();
     register.connect_key_released(move |_, _, code, _| {
-        if let Some(widget) = released
-            .pressed
-            .borrow_mut()
-            .remove(&code)
-            .and_then(|widget| widget.upgrade())
-        {
-            widget.remove_css_class("key-active");
-        }
+        released.pressed.borrow_mut().remove(&code);
     });
     window.add_controller(register.clone());
     Keyboard {
