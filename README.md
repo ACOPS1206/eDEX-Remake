@@ -1,78 +1,93 @@
-# eDEX-Remake 0.5.2
+# eDEX-Remake
 
-[EdexUi-2026](https://github.com/Ali-A-Alwahed/EdexUi-2026) 커밋 `2321bd5`과 그 위에 적용한 IPC·레이아웃 패치를 기준으로 삼았습니다. GTK4가 화면과 입력을 처리하고, VTE가 각 탭의 로컬 PTY를 처리합니다. 이 저장소에는 Rust 소스, 원본 테마와 미디어, 프로젝트 라이선스가 들어 있습니다.
+eDEX-Remake는 서버나 전용 모니터에 띄워둘 수 있는 Linux 터미널·시스템 모니터입니다. [EdexUi-2026](https://github.com/Ali-A-Alwahed/EdexUi-2026)의 화면 배치, 테마, 화면 키보드, 오프닝과 효과음을 Rust·GTK4·VTE로 이식했습니다.
 
-## Arch Linux에서 실행
+## EdexUi-2026과의 차이
 
-저장소를 받은 뒤 아래 명령으로 빌드합니다. 배포할 때는 실행 파일 옆에 `assets` 디렉터리를 함께 둡니다. Cage는 물리 TTY에서 일반 사용자로 실행합니다.
+아래 비교는 이식의 기준이 된 EdexUi-2026 2026.4.22의 [`2321bd5` 커밋](https://github.com/Ali-A-Alwahed/EdexUi-2026/tree/2321bd5)을 기준으로 합니다.
+
+| 항목 | EdexUi-2026 | eDEX-Remake |
+| --- | --- | --- |
+| 화면과 빌드 도구 | Electron·Chromium에서 HTML/CSS와 JavaScript를 실행하며 npm과 electron-builder로 빌드 | Rust·GTK4로 화면을 구성하며 Cargo로 네이티브 실행 파일을 빌드 |
+| 지원 환경 | Linux, macOS, Windows용 빌드 구성 | Linux의 Wayland 세션과 Cage를 대상으로 개발 |
+| 터미널 | xterm.js와 node-pty를 Electron IPC로 연결하며 탭 5개 제공 | VTE가 로컬 PTY를 관리. 기본 탭 5개에 추가 탭, 상단 자동 숨김과 포인터 진입 시 다시 표시를 지원 |
+| 터미널 모양 | 테마 JSON으로 글꼴과 색상을 지정하고 설정에서 글꼴 크기 지정 | 터미널용 글꼴, 크기, 색상 프리셋과 사용자 지정 팔레트를 설정에서 편집. 열린 탭에 즉시 적용 |
+| 파일 접근 | 하단 파일 영역과 상단 파일 탐색기·설치 앱 버튼 제공 | SYSTEM에서 파일 목록과 바로가기를 전환. 활성 터미널 경로와 연동하며 상단 파일·앱 버튼을 각각 숨길 수 있음 |
+| 시각 효과와 소리 | 브라우저 기반 차트와 WebGL 지구본, Howler 효과음 | GTK·Cairo 차트와 지구본, SDL3 효과음. 연속 키 입력 효과음을 겹쳐 재생 |
+
+GTK·Cairo에서 이식한 지구본은 원본 지도 타일과 회전·초기 스캔을 사용합니다. WebGL 버전과 타일 블렌딩, 입자 효과, 글꼴 렌더링에는 차이가 있습니다. 원본 테마의 `injectCSS`는 패널 색상·투명도·글자 크기·자간·모서리, 일부 키보드 표시·패널 배치 규칙을 변환합니다. Chromium DOM 셀렉터, 미디어 쿼리와 외부 URL 규칙의 호환 범위는 제한적입니다. 화면 비교는 소프트웨어 렌더링을 사용하는 1920×1080 Cage 세션에서 진행했습니다.
+
+## 주요 기능
+
+- **시스템 모니터** — CPU 사용률·클럭·온도, 메모리·스왑, 저장 공간과 마운트, 가동 시간과 배터리를 표시합니다. 메모리는 40×11 도트로 사용 중·회수 가능·여유 영역을 구분합니다. 프로세스 표는 PID, 이름, CPU, 메모리 등의 열로 정렬할 수 있습니다.
+- **네트워크 모니터** — 인터페이스 상태, 주소, 전송량, TCP 왕복 지연을 표시합니다. 트래픽 차트는 업로드를 기준선 위에, 다운로드를 아래에 그립니다. GeoLite2 City 데이터베이스를 연결하면 지구본에 피어 위치를 표시할 수 있습니다.
+- **탭과 셸** — 마우스가 터미널 상단을 벗어난 뒤 3초가 지나면 탭 바가 접힙니다. 상단에 포인터를 올려 다시 열고 오른쪽 **+** 또는 `Ctrl+Shift+T`로 현재 디렉터리에서 새 탭을 열 수 있습니다. 탭이 많으면 목록을 가로로 스크롤할 수 있습니다.
+- **파일과 앱** — SYSTEM의 **Files**는 활성 탭의 작업 경로를 따라갑니다. fish를 직접 실행할 때는 프롬프트의 경로 보고도 사용합니다. 셸 프롬프트에서 폴더를 클릭하면 입력 중인 줄을 지우고 해당 폴더로 이동합니다. 파일 검색, 숨김 파일 표시, 설치 앱 검색·실행을 지원합니다. 이미지·글꼴·PDF·오디오·비디오 미리 보기와 UTF-8 텍스트 편집을 제공합니다.
+- **외관과 입력** — 원본 테마 21개, 화면 키보드 배열 18개, 부팅 로그·글리치·환영 화면으로 구성된 오프닝, 물리 키와 화면 키의 효과음을 포함합니다. 터미널 색상은 **Follow theme**, Catppuccin Latte·Frappé·Macchiato·Mocha, Nord, **Custom** 중에서 선택할 수 있습니다. **Custom**의 색상 칸을 클릭하면 텍스트·배경·커서·선택 영역과 ANSI 16색을 직접 지정할 수 있습니다. [Catppuccin](https://github.com/catppuccin/alacritty) · [Nord](https://www.nordtheme.com/docs/colors-and-palettes/)
+
+## Arch Linux 빌드
 
 ```bash
-sudo pacman -S --needed rust base-devel gtk4 vte4 fontconfig sdl3 cage
+sudo pacman -S --needed git base-devel rust gtk4 vte4 fontconfig sdl3
+git clone https://github.com/ACOPS1206/eDEX-Remake.git
+cd eDEX-Remake
 cargo build --release --locked
+```
+
+실행 파일은 `target/release/edex-native`에 생성됩니다. 체크아웃 밖으로 옮길 때는 저장소의 `assets/` 디렉터리를 실행 파일 옆에 함께 두세요. 단위 테스트는 `cargo test --locked`로 실행할 수 있습니다.
+
+PDF 미리 보기에는 Poppler가 필요합니다. 오디오·비디오 미리 보기에는 GTK의 GStreamer 백엔드와 해당 형식을 지원하는 플러그인이 필요합니다.
+
+```bash
+sudo pacman -S --needed poppler gst-plugins-base gst-plugins-good
+```
+
+## 실행
+
+이미 Wayland 그래픽 세션에 로그인했다면 저장소 디렉터리에서 실행합니다.
+
+```bash
+GDK_BACKEND=wayland ./target/release/edex-native --windowed
+```
+
+전용 모니터에 전체 화면으로 띄우려면 Cage를 설치하고 물리 TTY에 일반 사용자로 로그인한 뒤 실행합니다.
+
+```bash
+sudo pacman -S --needed cage
 cage -s -- env GDK_BACKEND=wayland "$PWD/target/release/edex-native"
 ```
 
-효과음은 SDL3의 기본 오디오 장치에서 재생합니다. 같은 효과음이 끝나기 전에 다시 입력해도 두 소리가 재생됩니다. 미디어 미리 보기는 GTK GStreamer, PDF 미리 보기는 Poppler를 사용합니다.
+| 실행 옵션 | 동작 |
+| --- | --- |
+| `--intro` / `--nointro` | 이번 실행에서 오프닝을 강제로 켜거나 끔 |
+| `--theme tron` / `--keyboard fr-FR` | 이번 실행의 대시보드 테마와 화면 키보드 지정 |
+| `--interface enp3s0` | 모니터링할 인터페이스 지정. 실제 장치 이름으로 바꿔 사용 |
+| `--sample` | 창을 열지 않고 시스템 지표를 한 번 출력 |
+| `--help` / `--version` | 사용법과 빌드 버전 확인 |
 
-```bash
-sudo pacman -S gst-plugins-base gst-plugins-good poppler
-```
+## 설정과 단축키
 
-그래픽 세션이 이미 열려 있으면 `./edex-native --windowed`를 사용할 수 있습니다. `--theme tron`, `--keyboard fr-FR`, `--interface enp3s0`, `--intro`, `--nointro`, `--sample`을 지원합니다. `--sample`은 창 없이 지표를 한 번 읽습니다. `--intro`는 저장된 시작 화면 건너뛰기 설정을 해당 실행에서 덮어씁니다.
+`Ctrl+Shift+S`로 설정을 열고 **Save to Disk**를 누르면 저장됩니다. **Terminal font**, **Terminal font size**, **Terminal colors**의 변경은 열린 셸과 스크롤백을 유지한 채 적용됩니다. **Show top file manager button**과 **Show top installed apps button**은 상단의 두 진입점을 각각 제어합니다. SYSTEM과 단축키에서도 두 기능을 열 수 있습니다.
 
-## SYSTEM과 상단 버튼
-
-- SYSTEM 아래의 **Files** 또는 **File Manager**를 누르면 활성 터미널 탭의 디렉터리를 열고 이후 경로를 따라갑니다. fish는 프롬프트에서 작업 경로를 보고합니다. 폴더를 누르면 셸 프롬프트에 입력 중인 줄을 지우고 해당 디렉터리로 이동합니다.
-- **Shortcuts**를 누르면 설정, 테마, 키보드, 프로젝트와 설치 앱 항목으로 돌아갑니다.
-- 설정에서 **Show top file manager button**과 **Show top installed apps button**을 각각 끌 수 있습니다. 두 버튼을 꺼도 SYSTEM과 키보드 단축키에서 접근할 수 있습니다.
-
-## 터미널 탭과 표시 설정
-
-- 기본 탭은 5개입니다. 마우스가 터미널 상단을 벗어나면 3초 뒤 탭 바가 접힙니다. 상단에 포인터를 올리면 다시 나타납니다.
-- 탭 바 오른쪽 **+** 또는 `Ctrl+Shift+T`로 현재 디렉터리에서 새 탭을 엽니다. 탭이 많아지면 목록을 가로로 스크롤할 수 있습니다.
-- 설정의 **Terminal font**, **Terminal font size**, **Terminal colors**를 바꾸고 **Save to Disk**를 누르면 열린 탭에 즉시 적용됩니다. **Follow theme**은 현재 대시보드 테마의 터미널 모양을 사용합니다. **Custom**에서는 색상 칸을 눌러 텍스트, 배경, 커서, 선택 영역과 ANSI 16색에 `#rrggbb` 값을 직접 입력할 수 있습니다.
-- 기본 색상 프리셋은 [Catppuccin](https://github.com/catppuccin/alacritty)의 Latte, Frappé, Macchiato, Mocha와 [Nord](https://www.nordtheme.com/docs/colors-and-palettes/)입니다.
-
-## 이식 범위
-
-- 원본 레이아웃의 열과 하단 패널 비율을 Cage 1920×1080 캡처로 맞췄습니다. 원본 테마 JSON 21개, 키보드 JSON 18개, 세계 지도 타일, 시작 로그, 효과음을 포함합니다. 원본 글꼴은 네이티브 로딩을 위해 TTF로 변환했습니다.
-- 원본의 다섯 터미널 탭, 파일 패널과 셸 경로 연동, 파일·앱 검색, 설치 앱 실행, 파일 목록과 숨김 파일 전환, 마운트 디스크 목록을 지원합니다. 파일 미리 보기에는 PDF, 글꼴, 이미지, 오디오, 비디오와 일반 UTF-8 텍스트 편집기가 포함됩니다.
-- 네트워크 그래프는 상하 대칭 축에 업로드와 다운로드를 표시하며, 메모리는 원본과 같은 40×11의 활성·회수 가능·유휴 도트로 표시합니다. 시작 화면은 부팅 로그, 로고와 글리치, 환영 화면 순서로 재생합니다.
-- 전체 프로세스 표에서 PID, 이름, 사용자, CPU, 메모리, 상태, 시작 시각, 실행 시간을 정렬할 수 있습니다. 네트워크 모듈은 인터페이스별 상태, 전송량, TCP 왕복 지연과 GeoIP 핀을 표시합니다.
-- 화면 키보드는 원본 문자 조합표와 제어 시퀀스를 사용합니다. 원본 형식의 `shortcuts.json`에 있는 지원되는 앱 동작과 셸 명령 단축키를 읽습니다.
-- `Ctrl+Shift+S`로 설정을 편집합니다. 기존 XDG 설정 디렉터리의 `EdexUi-2026/settings.json` 또는 `eDEX-UI/settings.json`에 변경한 값을 저장합니다. 테마, 화면 키보드, 상단 버튼 표시 여부는 즉시 적용합니다. 실행 중인 셸과 스크롤백을 유지합니다. 다른 설정은 다시 실행할 때 적용합니다. 하단의 `themes`, `keyboards`에서도 바로 바꿀 수 있습니다.
+설정은 `$XDG_CONFIG_HOME` 또는 `~/.config` 아래의 기존 `EdexUi-2026/settings.json`이나 `eDEX-UI/settings.json`을 사용합니다. 원본 형식의 `shortcuts.json`에서 지원되는 앱 동작과 셸 명령 단축키를 읽습니다.
 
 | 키 | 동작 |
 | --- | --- |
-| Ctrl+1~5 | 기본 터미널 탭 선택 |
-| Ctrl+Tab / Ctrl+Shift+Tab | 다음 / 이전 터미널 탭 |
-| Ctrl+Shift+T | 터미널 탭 추가 |
-| Ctrl+Shift+C / V | 터미널 복사 / 붙여넣기 |
-| Ctrl+Shift+S / K | 설정 / 단축키 |
-| Ctrl+Shift+A / F | 설치 앱 / 파일 검색 |
-| Ctrl+Shift+L / H | 파일 목록 / 숨김 파일 |
-| Ctrl+Shift+P | 화면 키보드 암호 모드 |
-| F9 / F10 / F11 | 하단 패널 / 사이드 패널 / 전체 화면 |
-| Ctrl+Shift+Q | 종료 |
+| `Ctrl+1`–`Ctrl+5` | 기본 터미널 탭 선택 |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | 다음 / 이전 터미널 탭 |
+| `Ctrl+Shift+T` | 터미널 탭 추가 |
+| `Ctrl+Shift+C` / `Ctrl+Shift+V` | 터미널 복사 / 붙여넣기 |
+| `Ctrl+Shift+S` / `Ctrl+Shift+K` | 설정 / 단축키 |
+| `Ctrl+Shift+A` / `Ctrl+Shift+F` | 설치 앱 / 파일 검색 |
+| `Ctrl+Shift+L` / `Ctrl+Shift+H` | 파일 목록 / 숨김 파일 |
+| `Ctrl+Shift+P` | 화면 키보드 암호 모드 |
+| `F9` / `F10` / `F11` | 하단 패널 / 사이드 패널 / 전체 화면 |
+| `Ctrl+Shift+Q` | 종료 |
 
 ### GeoIP 지도
 
-`Download GeoLite2 City` 버튼은 원본이 사용하던 미러에서 데이터베이스를 가져오고 SHA-384를 검증한 다음 앱 설정의 `geoIPcache` 아래에 저장합니다. 기존 GeoLite2 City 경로를 설정에서 지정할 수도 있습니다. 피어 IP는 Linux TCP 테이블에서 읽어 로컬 DB로 조회합니다. DB가 있고 인터페이스에 공개 주소가 없으면, 원본과 같은 외부 IP 조회 서비스를 사용해 자체 엔드포인트를 찾습니다. GeoLite2 데이터 제공자는 MaxMind입니다. `Map public IPv4 addresses in terminal output`을 켜면, 터미널에서 새로 찾은 공개 IPv4 주소도 로컬 DB에서 조회해 잠깐 핀으로 표시합니다.
+설정에서 기존 GeoLite2 City 파일을 지정하거나 **Download GeoLite2 City**로 받을 수 있습니다. 다운로드는 `curl`, `tar`, `sha384sum`을 사용하며 검사 후 설정 디렉터리의 `geoIPcache`에 저장합니다. 피어 위치는 Linux TCP 테이블과 로컬 데이터베이스에서 조회합니다. 데이터베이스가 있고 인터페이스에 공개 주소가 없으면 외부 IP 조회 서비스로 자신의 엔드포인트를 찾습니다. **Map public IPv4 addresses in terminal output**을 켜면 터미널 출력에 나타나는 공개 IPv4 주소도 로컬 DB로 조회합니다. GeoLite2 데이터 제공자는 MaxMind입니다.
 
-### 화면과 동작 차이
+## 기반 프로젝트와 라이선스
 
-지구본은 원본 타일, 45초 회전, 50도 원근 카메라, 초반 경도 스캔, 거리 안개, 위성 신호를 GTK·Cairo에서 구현합니다. WebGL 버전과 타일 색의 분포, 블렌딩과 세부 입자 효과에는 차이가 있습니다.
-
-기존 테마의 `injectCSS`에서 지원하는 효과는 기본 패널의 색상·투명도·글자 크기·자간·둥근 모서리, 내장 테마가 쓰는 키보드 숨김과 패널 배치입니다. Chromium DOM, 미디어 쿼리, 외부 URL을 쓰는 규칙에는 호환 범위의 차이가 있습니다.
-
-비교는 소프트웨어 렌더링을 사용하는 중첩 Cage에서 진행했습니다. GP66 물리 디스플레이의 240Hz 출력과 스피커는 별도 검증이 필요합니다.
-
-## 소스 빌드
-
-```bash
-sudo pacman -S rust base-devel gtk4 vte4 fontconfig sdl3
-cargo build --release --locked
-cargo test --locked
-```
-
-실행 파일은 `target/release/edex-native`에 생성됩니다. EdexUi-2026의 기반 프로젝트는 [GitSquared/eDEX-UI](https://github.com/GitSquared/edex-ui)입니다.
+EdexUi-2026은 [GitSquared/eDEX-UI](https://github.com/GitSquared/edex-ui)를 기반으로 합니다. 이 저장소의 라이선스 전문은 [LICENSE](LICENSE)에서 확인할 수 있습니다.
