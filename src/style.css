@@ -1,0 +1,195 @@
+window {
+    background-color: @shade;
+    color: @accent;
+    font-size: 13px;
+}
+.workspace { padding: 6px 9px; }
+.panel-caption {
+    min-height: 16px;
+    border-bottom: 1px solid alpha(@accent, 0.45);
+    padding: 0 4px;
+}
+.side-panel, .terminal-panel, .filesystem-panel {
+    background-color: @shade;
+}
+.sidebar-content { padding: 0 4px; }
+.metric-group {
+    border-top: 1px solid alpha(@accent, 0.42);
+    padding-top: 5px;
+}
+.section-title {
+    color: @accent;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 0.6px;
+}
+.subtle, .hostname { color: alpha(@accent, 0.73); }
+.clock {
+    color: @accent;
+    font-size: 34px;
+    font-weight: bold;
+    letter-spacing: 4px;
+}
+.value {
+    color: @accent;
+    font-weight: bold;
+    font-size: 16px;
+}
+.terminal-heading {
+    border-bottom: 1px solid alpha(@accent, 0.24);
+    padding: 2px 5px;
+}
+.shell { padding: 1px 4px; }
+button, searchentry {
+    border-radius: 0;
+    border: 1px solid alpha(@accent, 0.34);
+    color: @accent;
+    background: @shade;
+    box-shadow: none;
+}
+button:hover { background: alpha(@accent, 0.16); }
+button:checked, notebook tab:checked {
+    background: @accent;
+    color: @shade;
+}
+.quick-action {
+    min-height: 27px;
+    border: 1px solid alpha(@accent, 0.65);
+    background: alpha(@accent, 0.14);
+    font-weight: bold;
+    letter-spacing: 0.7px;
+}
+notebook > header {
+    background: @shade;
+    border-bottom: 1px solid alpha(@accent, 0.35);
+}
+notebook > header tabs { padding: 0; }
+notebook > header tabs tab { padding: 2px 15px; min-height: 17px; }
+notebook > stack { background: @shade; }
+.process, .process-name { font-size: 12px; }
+.rx, .tx { color: @accent; }
+.filesystem-panel {
+    padding: 4px;
+    border-top: 1px solid alpha(@accent, 0.45);
+}
+.filesystem-panel button { padding: 2px 4px; min-height: 16px; }
+.filesystem-panel .file-tile { padding: 4px; border-color: transparent; }
+.virtual-keyboard {
+    padding: 4px 3px;
+    border-top: 1px solid alpha(@accent, 0.30);
+}
+button.virtual-key { min-width: 0; min-height: 24px; padding: 1px; font-weight: bold; }
+button.space-key { min-height: 24px; }
+.key-shift { font-weight: normal; font-size: 9px; color: alpha(@accent, 0.68); }
+progressbar trough { background-color: alpha(@accent, 0.12); }
+progressbar progress { background-color: @accent; }
+progressbar text { color: @accent; font-size: 11px; }
+
+.workspace { padding: 8px 18px; }
+.sidebar-content { padding: 0 6px; }
+.side-panel, .terminal-panel, .filesystem-panel { background: transparent; }
+.clock { font-size: 43px; font-weight: normal; letter-spacing: 5px; }
+.facts { border-top: 1px solid alpha(@accent, 0.43); padding-top: 4px; }
+.fact-title { font-size: 17px; font-weight: normal; }
+.fact-value { font-size: 13px; }
+.module-button { min-height: 0; border: 0; padding: 0; font-size: 13px; }
+.process-inspector label { padding: 4px 7px; }
+.dialog-content { padding: 16px; }
+.greeting { background: @shade; padding: 20px 28px; border: 1px solid @accent; font-size: 30px; }
+button.quick-action { padding: 2px 14px; min-height: 45px; }
+.quick-title { color: alpha(@accent,0.65); font-size: 11px; font-weight: normal; }
+.quick-value { font-size: 16px; font-weight: normal; }
+notebook, notebook > header, notebook > stack { border: none; border-radius: 0; }
+notebook > header { background: alpha(@accent, 0.055); }
+notebook > header tabs tab { min-height: 20px; border-right: 1px solid alpha(@accent,0.19); }
+notebook > header tabs tab:checked { color: @accent; background: alpha(@accent,0.075); }
+notebook > header tabs tab label { font-size: 14px; }
+.virtual-keyboard { border: none; padding: 1px 8px; }
+button.virtual-key {
+    min-height: 28px;
+    font-size: 21px;
+    font-weight: normal;
+    border: 1px solid transparent;
+    background: transparent;
+    border-radius: 3px;
+}
+button.virtual-key.key-wide { font-size: 17px; }
+button.virtual-key.key-shape { border-color: alpha(@accent, 0.56); }
+button.virtual-key.key-active, button.virtual-key:checked, button.virtual-key:active {
+    background: @accent;
+    color: @shade;
+}
+.virtual-keyboard.password-mode { opacity: 0.5; }
+.virtual-keyboard.password-mode button.virtual-key:active { background: transparent; color: @accent; }
+.key-shift { font-size: 13px; }
+.filesystem-panel .file-tile { background: transparent; }
+.filesystem-panel .file-tile:hover { background: alpha(@accent,0.12); }
+searchentry > text, entry > text { color: @accent; }
+list, row, columnview, dropdown, .navigation-sidebar { background: @shade; color: @accent; }
+.system-tile { min-width: 88px; min-height: 74px; }
+.system-tile label { font-size: 14px; }
+
+.tab-bar { background: alpha(@accent, 0.055); }
+button.shell-tab {
+    min-height: 23px;
+    border: 0;
+    border-right: 1px solid alpha(@accent, 0.20);
+    border-bottom: 1px solid alpha(@accent, 0.18);
+    background: transparent;
+    font-weight: normal;
+    padding: 0 8px;
+}
+button.shell-tab:checked { background: alpha(@accent, 0.09); color: @accent; }
+button.shell-tab:hover { background: alpha(@accent, 0.13); }
+paned > separator { background: transparent; }
+.mount-progress { padding: 3px 3px 1px; }
+.mount-progress progressbar { margin: 4px 0; }
+.installed-apps row { padding: 6px 9px; border-bottom: 1px solid alpha(@accent,0.12); }
+.installed-apps row:selected { background: alpha(@accent,0.16); }
+.focus-layout .panel-caption { border: none; }
+.focus-keyboard button.virtual-key { color: transparent; min-height: 12px; }
+.focus-keyboard button.virtual-key .key-shift { color: transparent; font-size: 0; }
+.focus-keyboard button.virtual-key:hover, .focus-keyboard button.virtual-key.key-active,
+.focus-keyboard button.virtual-key:checked { color: @accent; background: alpha(@accent,0.16); }
+.boot-screen { background: @shade; padding: 48px; }
+.boot-title { font-size: 58px; margin: 12px 0 18px; }
+.boot-log { font-family: monospace; font-size: 15px; }
+button.update-notice { min-height: 0; padding: 2px 6px; }
+.mount-button { min-height: 0; font-size: 12px; padding: 0 5px; border: 0; }
+.mount-button:hover { background: alpha(@accent,0.10); }
+
+.modal-backdrop { background: rgba(0,0,0,0.66); }
+.modal-card { background: @shade; border: 1px solid alpha(@accent,0.58); }
+.modal-heading { background: alpha(@accent,0.16); padding: 3px 7px 3px 15px; font-size: 16px; }
+.modal-heading button { padding: 2px 7px; min-height: 16px; }
+entry, searchentry, spinbutton {
+    background: @shade;
+    color: @accent;
+    border: 1px solid alpha(@accent, 0.38);
+    border-radius: 1px;
+}
+entry:focus-within, searchentry:focus-within, spinbutton:focus-within {
+    outline: none;
+    border-color: @accent;
+}
+entry > text, searchentry > text, spinbutton > text { background: transparent; color: @accent; }
+switch { background: alpha(@accent,0.16); border: 1px solid alpha(@accent,0.38); }
+switch:checked { background: alpha(@accent,0.55); }
+switch slider { background: @accent; }
+button.virtual-key { font-size: 24px; }
+button.virtual-key.key-wide { font-size: 19px; }
+button.virtual-key.arrow-key { min-width: 29px; min-height: 25px; border-radius: 1px; }
+button.virtual-key.key-enter-upper { border-bottom-color: transparent; margin-bottom: -2px; }
+button.virtual-key.key-enter-lower { border-top-color: transparent; margin-left: 24px; margin-top: -2px; }
+
+.network-traffic, .memory-module { padding: 5px 4px 0; }
+.network-traffic { margin-top: -3px; }
+.swap-gauge trough {
+    min-height: 3px;
+    border-radius: 0;
+    background: alpha(@accent, 0.4);
+    border-right: 1px solid alpha(@accent, 0.8);
+}
+.swap-gauge progress { min-height: 3px; border-radius: 0; }
+.opening { background: @shade; }
+.opening-log { padding: 8px 10px; font-family: monospace; font-size: 15px; }
