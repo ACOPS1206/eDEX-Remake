@@ -49,9 +49,10 @@ impl Keyboard {
 struct Feedback {
     view: glib::WeakRef<gtk::Box>,
     manual: Cell<bool>,
-    pressed: RefCell<HashMap<u32, glib::WeakRef<gtk::Widget>>>,
-    pulses: RefCell<HashMap<usize, (u64, glib::WeakRef<gtk::Widget>)>>,
-    next_pulse: Cell<u64>,
+    pressed: RefCell<HashMap<u32, Vec<glib::WeakRef<gtk::Widget>>>>,
+    blinks: RefCell<HashMap<usize, (u64, glib::WeakRef<gtk::Widget>)>>,
+    next_blink: Cell<u64>,
+    enter_keys: RefCell<Vec<glib::WeakRef<gtk::Widget>>>,
     modifiers: Modifiers,
     pending: RefCell<Vec<String>>,
 }
@@ -62,14 +63,17 @@ impl Feedback {
         if let Some(view) = self.view.upgrade() {
             if view.has_css_class("authentication-mode") != private {
                 if private {
-                    // Keep the keyboard on screen but do not reveal secret keys
-                    // through key flashes, active modifiers, or mouse input.
+                    // A password prompt must not expose key positions via animation.
                     self.pressed.borrow_mut().clear();
-                    for (_, (_, widget)) in self.pulses.borrow_mut().drain() {
-                        if let Some(widget) = widget.upgrade() {
-                            widget.remove_css_class("key-flash");
-                            widget.remove_css_class("key-echo");
+                    for (_, (_, key)) in self.blinks.borrow_mut().drain() {
+                        if let Some(key) = key.upgrade() {
+                            key.remove_css_class("key-blink");
+                            key.remove_css_class("key-active");
                         }
+                    }
+                    for key in self.enter_keys.borrow().iter().filter_map(glib::WeakRef::upgrade) {
+                        key.remove_css_class("key-blink");
+                        key.remove_css_class("key-active");
                     }
                     reset(&self.modifiers);
                     self.pending.borrow_mut().clear();
@@ -84,51 +88,48 @@ impl Feedback {
         private
     }
 
-    fn pulse(self: &Rc<Self>, widget: &gtk::Widget) {
+    fn press(&self, widget: &gtk::Widget) {
+        self.blinks.borrow_mut().remove(&(widget.as_ptr() as usize));
+        widget.remove_css_class("key-blink");
+        widget.add_css_class("key-active");
+    }
+
+    // Adapted from EdexUi-2026 keyboard.class.js: keyup/mouseup applies the
+    // original 100ms blink, instead of an unconditional 255ms double pulse.
+    fn release(self: &Rc<Self>, widget: &gtk::Widget) {
+        widget.remove_css_class("key-active");
         let key = widget.as_ptr() as usize;
-        let sequence = self.next_pulse.get().wrapping_add(1);
-        self.next_pulse.set(sequence);
-        self.pulses
+        let sequence = self.next_blink.get().wrapping_add(1);
+        self.next_blink.set(sequence);
+        self.blinks
             .borrow_mut()
             .insert(key, (sequence, widget.downgrade()));
+        widget.add_css_class("key-blink");
 
-        widget.remove_css_class("key-echo");
-        widget.add_css_class("key-flash");
+        let feedback = Rc::downgrade(self);
+        let weak_widget = widget.downgrade();
+        glib::timeout_add_local_once(Duration::from_millis(100), move || {
+            let Some(feedback) = feedback.upgrade() else {
+                return;
+            };
+            let is_current = feedback
+                .blinks
+                .borrow()
+                .get(&key)
+                .is_some_and(|(current, _)| *current == sequence);
+            if !is_current {
+                return;
+            }
+            if let Some(widget) = weak_widget.upgrade() {
+                widget.remove_css_class("key-blink");
+            }
+            feedback.blinks.borrow_mut().remove(&key);
+        });
+    }
 
-        // First, a bright flash; then a short pause and a weaker afterglow.
-        // A sequence ID prevents old timeouts from cancelling a newer press.
-        for (delay_ms, echo, finished) in [
-            (95, false, false),
-            (145, true, false),
-            (255, false, true),
-        ] {
-            let feedback = Rc::downgrade(self);
-            let weak_widget = widget.downgrade();
-            glib::timeout_add_local_once(Duration::from_millis(delay_ms), move || {
-                let Some(feedback) = feedback.upgrade() else {
-                    return;
-                };
-                if !feedback
-                    .pulses
-                    .borrow()
-                    .get(&key)
-                    .is_some_and(|(current, _)| *current == sequence)
-                {
-                    return;
-                }
-
-                if let Some(widget) = weak_widget.upgrade() {
-                    widget.remove_css_class("key-flash");
-                    if echo {
-                        widget.add_css_class("key-echo");
-                    } else {
-                        widget.remove_css_class("key-echo");
-                    }
-                }
-                if finished {
-                    feedback.pulses.borrow_mut().remove(&key);
-                }
-            });
+    fn release_enter(self: &Rc<Self>) {
+        for widget in self.enter_keys.borrow().iter().filter_map(glib::WeakRef::upgrade) {
+            self.release(&widget);
         }
     }
 }
@@ -147,8 +148,9 @@ pub fn panel(
         view: keyboard.downgrade(),
         manual: Cell::new(false),
         pressed: RefCell::new(HashMap::new()),
-        pulses: RefCell::new(HashMap::new()),
-        next_pulse: Cell::new(0),
+        blinks: RefCell::new(HashMap::new()),
+        next_blink: Cell::new(0),
+        enter_keys: RefCell::new(Vec::new()),
         modifiers: Modifiers::default(),
         pending: RefCell::new(Vec::new()),
     });
@@ -193,7 +195,7 @@ pub fn panel(
                 let sounds = sounds.clone();
                 button.connect_clicked(move |button| {
                     if !key_feedback.refresh(&tabs) {
-                        key_feedback.pulse(button.upcast_ref::<gtk::Widget>());
+                        key_feedback.release(button.upcast_ref::<gtk::Widget>());
                         sounds.play("stdin");
                     }
                 });
@@ -233,6 +235,7 @@ pub fn panel(
                     } else {
                         "key-enter-upper"
                     });
+                    feedback.enter_keys.borrow_mut().push(button.downgrade().upcast());
                 }
                 if name.contains("ICON: ARROW") {
                     button.add_css_class("arrow-key");
@@ -248,12 +251,10 @@ pub fn panel(
                 let widget = button.clone().upcast::<gtk::Widget>();
                 for field in ["cmd", "shift_cmd", "alt_cmd", "altshift_cmd"] {
                     if let Some(input) = key[field].as_str().filter(|input| {
-                        !input.is_empty()
-                            && !input.starts_with("ESCAPED|--")
-                            && !input.starts_with("~~~")
+                        !input.is_empty() && !input.starts_with("ESCAPED|--")
                     }) {
                         indicators
-                            .entry(input.to_owned())
+                            .entry(decode(input))
                             .or_insert_with(|| widget.downgrade());
                     }
                 }
@@ -265,8 +266,13 @@ pub fn panel(
                     if feedback.refresh(&tabs) {
                         return;
                     }
-                    feedback.pulse(button.upcast_ref::<gtk::Widget>());
-                    sounds.play("stdin");
+                    if key["cmd"].as_str() == Some("\r") {
+                        feedback.release_enter();
+                        sounds.play("granted");
+                    } else {
+                        feedback.release(button.upcast_ref::<gtk::Widget>());
+                        sounds.play("stdin");
+                    }
                     let mods = &feedback.modifiers;
                     let pending = &feedback.pending;
                     let active = |kind| {
@@ -353,30 +359,59 @@ pub fn panel(
     register.set_propagation_phase(gtk::PropagationPhase::Capture);
     let held = feedback.clone();
     let active_tabs = tabs.clone();
+    let enter_on_press = feedback.enter_keys.borrow().clone();
     register.connect_key_pressed(move |_, key, code, _| {
         if !held.refresh(&active_tabs) {
             let name = match key {
                 gdk::Key::Return | gdk::Key::KP_Enter => "\r".to_owned(),
+                gdk::Key::Escape => "\x1b".to_owned(),
                 gdk::Key::BackSpace => "\u{8}".to_owned(),
                 gdk::Key::Tab | gdk::Key::ISO_Left_Tab => "\t".to_owned(),
+                gdk::Key::Up => "\x1bOA".to_owned(),
+                gdk::Key::Down => "\x1bOB".to_owned(),
+                gdk::Key::Left => "\x1bOD".to_owned(),
+                gdk::Key::Right => "\x1bOC".to_owned(),
                 gdk::Key::Shift_L | gdk::Key::Shift_R => "shift".to_owned(),
                 gdk::Key::Alt_L | gdk::Key::Alt_R | gdk::Key::ISO_Level3_Shift => "alt".to_owned(),
                 gdk::Key::Control_L | gdk::Key::Control_R => "ctrl".to_owned(),
                 _ => key.to_unicode().map(String::from).unwrap_or_default(),
             };
-            if let Some(widget) = indicators.get(&name).and_then(glib::WeakRef::upgrade) {
+            let keys: Vec<gtk::Widget> = if name == "\r" {
+                enter_on_press.iter().filter_map(glib::WeakRef::upgrade).collect()
+            } else {
+                indicators
+                    .get(&name)
+                    .and_then(glib::WeakRef::upgrade)
+                    .into_iter()
+                    .collect()
+            };
+            if !keys.is_empty() {
                 let mut pressed = held.pressed.borrow_mut();
                 if let std::collections::hash_map::Entry::Vacant(entry) = pressed.entry(code) {
-                    entry.insert(widget.downgrade());
-                    held.pulse(&widget);
+                    entry.insert(keys.iter().map(|widget| widget.downgrade()).collect());
+                    for widget in keys {
+                        held.press(&widget);
+                    }
                 }
             }
         }
         glib::Propagation::Proceed
     });
     let released = feedback.clone();
-    register.connect_key_released(move |_, _, code, _| {
-        released.pressed.borrow_mut().remove(&code);
+    let released_tabs = tabs.clone();
+    let key_sounds = sounds.clone();
+    register.connect_key_released(move |_, key, code, _| {
+        let was_private = released.refresh(&released_tabs);
+        if let Some(widgets) = released.pressed.borrow_mut().remove(&code) {
+            if !was_private {
+                for widget in widgets.into_iter().filter_map(|widget| widget.upgrade()) {
+                    released.release(&widget);
+                }
+            }
+        }
+        if !was_private && matches!(key, gdk::Key::Return | gdk::Key::KP_Enter) {
+            key_sounds.play("granted");
+        }
     });
     window.add_controller(register.clone());
     Keyboard {
