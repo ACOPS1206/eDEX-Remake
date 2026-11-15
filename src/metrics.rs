@@ -433,11 +433,14 @@ pub fn mount_usage(path: &Path) -> Option<(u64, u64)> {
         return None;
     }
     let fs = unsafe { buffer.assume_init() };
-    let total = fs.f_blocks.saturating_mul(fs.f_frsize);
-    let used = fs
-        .f_blocks
-        .saturating_sub(fs.f_bfree)
-        .saturating_mul(fs.f_frsize);
+    // On macOS statvfs::f_blocks is u32, whereas Linux uses u64.
+    // Normalize all inputs before multiplying so both targets compile and
+    // large volumes do not accidentally overflow 32-bit intermediates.
+    let blocks = u64::from(fs.f_blocks);
+    let free = u64::from(fs.f_bfree);
+    let block_size = u64::from(fs.f_frsize);
+    let total = blocks.saturating_mul(block_size);
+    let used = blocks.saturating_sub(free).saturating_mul(block_size);
     Some((used, total))
 }
 
