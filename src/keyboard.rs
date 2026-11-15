@@ -68,11 +68,13 @@ impl Feedback {
                         for key in keys.into_iter().filter_map(|key| key.upgrade()) {
                             key.remove_css_class("key-active");
                             key.remove_css_class("key-blink");
+                            key.remove_css_class("key-blink-peak");
                         }
                     }
                     for (_, (_, key)) in self.blinks.borrow_mut().drain() {
                         if let Some(key) = key.upgrade() {
                             key.remove_css_class("key-blink");
+                            key.remove_css_class("key-blink-peak");
                             key.remove_css_class("key-active");
                         }
                     }
@@ -123,6 +125,7 @@ impl Feedback {
     fn press(&self, widget: &gtk::Widget) {
         self.blinks.borrow_mut().remove(&(widget.as_ptr() as usize));
         widget.remove_css_class("key-blink");
+        widget.remove_css_class("key-blink-peak");
         widget.add_css_class("key-active");
     }
 
@@ -136,7 +139,28 @@ impl Feedback {
         self.blinks
             .borrow_mut()
             .insert(key, (sequence, widget.downgrade()));
+        widget.remove_css_class("key-blink-peak");
         widget.add_css_class("key-blink");
+
+        // The upstream 0.5s blink keyframe is only active for 100ms:
+        // it reaches 20% of the keyframe cycle, or about 40% brightness.
+        let halfway_feedback = Rc::downgrade(self);
+        let halfway_key = widget.downgrade();
+        glib::timeout_add_local_once(Duration::from_millis(50), move || {
+            let Some(feedback) = halfway_feedback.upgrade() else {
+                return;
+            };
+            if feedback
+                .blinks
+                .borrow()
+                .get(&key)
+                .is_some_and(|(current, _)| *current == sequence)
+            {
+                if let Some(widget) = halfway_key.upgrade() {
+                    widget.add_css_class("key-blink-peak");
+                }
+            }
+        });
 
         let feedback = Rc::downgrade(self);
         let weak_widget = widget.downgrade();
@@ -154,6 +178,7 @@ impl Feedback {
             }
             if let Some(widget) = weak_widget.upgrade() {
                 widget.remove_css_class("key-blink");
+                widget.remove_css_class("key-blink-peak");
             }
             feedback.blinks.borrow_mut().remove(&key);
         });
@@ -211,9 +236,10 @@ pub fn panel(
                 other => other,
             };
             let span = match command {
-                " " => 15,
-                "\t" | "\r" | "\u{8}" => 3,
-                _ if name.len() > 2 => 3,
+                " " => 20,
+                "\t" | "\r" | "\u{8}" => 4,
+                _ if matches!(name, "ESC" | "CAPS" | "SHIFT" | "CTRL") => 4,
+                _ if name.len() > 2 && !name.starts_with("ESCAPED") => 3,
                 _ => 2,
             };
             if let Some(kind) = modifier(command) {
