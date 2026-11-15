@@ -1,0 +1,4 @@
+# Keep Linux helper scripts executable by Bash even when checked out on Windows.
+*.sh text eol=lf
+windows-launcher/*.md text eol=lf
+windows-launcher/*.rs text eol=lf
