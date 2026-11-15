@@ -58,11 +58,12 @@ struct Feedback {
 
 impl Feedback {
     fn refresh(&self, tabs: &Terminals) -> bool {
-        let hidden = self.manual.get() || tabs.password_input();
+        let private = self.manual.get() || tabs.password_input();
         if let Some(view) = self.view.upgrade() {
-            if view.is_visible() == hidden {
-                view.set_visible(!hidden);
-                if hidden {
+            if view.has_css_class("authentication-mode") != private {
+                if private {
+                    // Keep the keyboard on screen but do not reveal secret keys
+                    // through key flashes, active modifiers, or mouse input.
                     self.pressed.borrow_mut().clear();
                     for (_, (_, widget)) in self.pulses.borrow_mut().drain() {
                         if let Some(widget) = widget.upgrade() {
@@ -72,10 +73,15 @@ impl Feedback {
                     }
                     reset(&self.modifiers);
                     self.pending.borrow_mut().clear();
+                    view.add_css_class("authentication-mode");
+                } else {
+                    view.remove_css_class("authentication-mode");
                 }
+                view.set_opacity(if private { 0.28 } else { 1.0 });
+                view.set_sensitive(!private);
             }
         }
-        hidden
+        private
     }
 
     fn pulse(self: &Rc<Self>, widget: &gtk::Widget) {
