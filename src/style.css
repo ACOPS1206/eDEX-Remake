@@ -243,10 +243,12 @@ button.virtual-key.key-spacebar {
     min-height: 0;
 }
 button.virtual-key.key-enter-upper {
+    margin: 0;
     border-bottom-right-radius: 0;
     border-bottom-color: transparent;
 }
 button.virtual-key.key-enter-lower {
+    margin: 0;
     border-top-left-radius: 0;
     border-top-color: transparent;
 }
