@@ -210,24 +210,40 @@ pub fn panel(
                 grid.attach(&button, column, 0, span, 1);
             } else {
                 let button = gtk::Button::new();
-                let contents = gtk::Box::new(gtk::Orientation::Vertical, 0);
-                let alternate = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-                for field in ["shift_name", "alt_name", "altshift_name"] {
-                    if let Some(upper) = key[field].as_str().filter(|name| !name.is_empty()) {
-                        let top = gtk::Label::new(Some(upper));
-                        top.add_css_class("key-shift");
-                        alternate.append(&top);
+                // Recreate the upstream h1/h2/h3/h4/h5 key legends using
+                // GTK overlay positioning rather than a vertical label stack.
+                let contents = gtk::Overlay::new();
+                contents.add_css_class("key-legends");
+                let main = gtk::Label::new(Some(label));
+                main.add_css_class("key-main");
+                contents.set_child(Some(&main));
+                for (field, class, horizontal, vertical) in [
+                    ("shift_name", "key-shift", gtk::Align::Start, gtk::Align::Start),
+                    ("alt_name", "key-alt", gtk::Align::End, gtk::Align::End),
+                    ("fn_name", "key-fn", gtk::Align::Start, gtk::Align::Start),
+                    ("altshift_name", "key-altshift", gtk::Align::End, gtk::Align::Start),
+                ] {
+                    if let Some(text) = key[field].as_str().filter(|name| !name.is_empty()) {
+                        let legend = gtk::Label::new(Some(text));
+                        legend.add_css_class(class);
+                        legend.set_halign(horizontal);
+                        legend.set_valign(vertical);
+                        legend.set_margin_start(3);
+                        legend.set_margin_end(3);
+                        legend.set_margin_top(3);
+                        legend.set_margin_bottom(3);
+                        contents.add_overlay(&legend);
                     }
                 }
-                if alternate.first_child().is_some() {
-                    contents.append(&alternate);
-                }
-                contents.append(&gtk::Label::new(Some(label)));
                 button.set_child(Some(&contents));
                 button.add_css_class("virtual-key");
                 button.set_focusable(false);
                 if matches!(command, " " | "\r") || name.contains("ICON: ARROW") {
                     button.add_css_class("key-shape");
+                }
+                if command == " " {
+                    button.add_css_class("key-spacebar");
+                    button.set_valign(gtk::Align::Center);
                 }
                 if command == "\r" {
                     button.add_css_class(if name.is_empty() {
@@ -235,7 +251,10 @@ pub fn panel(
                     } else {
                         "key-enter-upper"
                     });
-                    feedback.enter_keys.borrow_mut().push(button.downgrade().upcast());
+                    feedback
+                        .enter_keys
+                        .borrow_mut()
+                        .push(button.upcast_ref::<gtk::Widget>().downgrade());
                 }
                 if name.contains("ICON: ARROW") {
                     button.add_css_class("arrow-key");
@@ -244,9 +263,12 @@ pub fn panel(
                 if name.len() > 2 && !name.starts_with("ESCAPED") {
                     button.add_css_class("key-wide");
                 }
-                // Every key uses its allocated row height instead of being
-                // vertically centered at the small CSS minimum height.
-                button.set_valign(gtk::Align::Fill);
+                // The original spacebar is shorter than the letter keys.
+                button.set_valign(if command == " " {
+                    gtk::Align::Center
+                } else {
+                    gtk::Align::Fill
+                });
                 button.set_vexpand(true);
                 let widget = button.clone().upcast::<gtk::Widget>();
                 for field in ["cmd", "shift_cmd", "alt_cmd", "altshift_cmd"] {
