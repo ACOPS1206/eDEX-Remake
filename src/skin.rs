@@ -216,6 +216,17 @@ fn size_workspace(
     dock.set_height_request(dock_height);
     files.set_visible(!narrow || layout.dock == Dock::Files);
     keyboard.set_size_request(-1, dock_height);
+    // GTK4 has no viewport-relative CSS units. Resolve the upstream
+    // 2.7vw / 8.33vh / 47.68vh key widths during every viewport resize.
+    let keyboard_width = match layout.dock {
+        Dock::Split => (width - position - 28).max(1),
+        Dock::Reversed => (position - 28).max(1),
+        Dock::Keyboard => (width - 28).max(1),
+        Dock::Files => 1,
+    };
+    if let Some(view) = keyboard.first_child().and_downcast::<gtk::Box>() {
+        crate::keyboard::size_to_source(&view, width, height, keyboard_width);
+    }
 }
 
 // Translate explicit legacy panel and widget styles. Reconstruct values rather
