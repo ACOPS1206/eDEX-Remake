@@ -658,8 +658,13 @@ pub fn size_to_source(
 
     for (row_index, (fixed, keys, row_width)) in rows.into_iter().enumerate() {
         fixed.set_size_request(fixed_width, cell_height);
-        let extra_offset = if row_index == 4 { vh * 0.024 } else { 0.0 };
-        let mut x = ((maximum - row_width) / 2.0 + extra_offset).max(0.0);
+        let remaining = (maximum - row_width).max(0.0);
+        let extra_offset = if row_index == 4 {
+            (vh * 0.024).min(remaining / 2.0)
+        } else {
+            0.0
+        };
+        let mut x = (remaining / 2.0 + extra_offset).max(0.0);
 
         for key in keys {
             x += key.gutter;
