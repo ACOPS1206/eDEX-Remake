@@ -1,0 +1,168 @@
+name: Native builds and releases
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  linux:
+    name: Debian 13 / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: debian:trixie
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    steps:
+      - name: Install native build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl git build-essential pkg-config \
+            libgtk-4-dev libvte-2.91-gtk4-dev libsdl3-dev libfontconfig-dev
+          curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
+            | sh -s -- -y --profile minimal --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - uses: actions/checkout@v4
+      - name: Check installed libraries
+        run: |
+          pkg-config --modversion gtk4 vte-2.91-gtk4 sdl3
+          cargo --version
+      - name: Compile and test
+        run: |
+          cargo build --release --locked
+          cargo test --locked
+      - name: Package portable directory (system GTK/VTE/SDL3 required)
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          NAME="eDEX-Remake-linux-${ARCH}-debian13"
+          mkdir -p "dist/$NAME"
+          install -m755 target/release/edex-native "dist/$NAME/edex-native"
+          cp -a assets LICENSE README.md "dist/$NAME/"
+          printf '%s\n' 'Requires GTK4, VTE GTK4, SDL3 and fontconfig from the host OS.' \
+            'Run ./edex-native after installing these shared libraries.' > "dist/$NAME/RUN.txt"
+          tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}-debian13
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  archlinux:
+    name: Arch Linux / x86_64
+    runs-on: ubuntu-24.04
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Install native build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          pacman -Syu --noconfirm --needed \
+            git rust cargo gtk4 vte4 sdl3 pkgconf fontconfig ca-certificates
+      - uses: actions/checkout@v4
+      - name: Compile and test
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg-config --modversion gtk4 vte-2.91-gtk4 sdl3
+          cargo build --release --locked
+          cargo test --locked
+      - name: Package Arch build
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAME=eDEX-Remake-linux-x86_64-arch
+          mkdir -p "dist/$NAME"
+          install -m755 target/release/edex-native "dist/$NAME/edex-native"
+          cp -a assets LICENSE README.md "dist/$NAME/"
+          printf '%s\n' 'Arch Linux runtime: sudo pacman -S --needed gtk4 vte4 sdl3 fontconfig' > "dist/$NAME/RUN.txt"
+          tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64-arch
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  macos:
+    name: macOS / Apple Silicon (experimental)
+    runs-on: macos-15
+    # The Rust port still uses Linux /proc and /sys for some dashboard data.
+    # This job tests native buildability; full macOS runtime parity is not yet verified.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GTK4, VTE GTK4 and SDL3
+        run: |
+          brew install pkgconf gtk4 vte3 sdl3 fontconfig
+          pkg-config --modversion gtk4 vte-2.91-gtk4 sdl3
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compile
+        run: cargo build --release --locked
+      - name: Package experimental macOS executable
+        run: |
+          set -euo pipefail
+          NAME=eDEX-Remake-macos-arm64-experimental
+          mkdir -p "dist/$NAME"
+          install -m755 target/release/edex-native "dist/$NAME/edex-native"
+          cp -R assets LICENSE README.md "dist/$NAME/"
+          printf '%s\n' 'EXPERIMENTAL: Linux-specific dashboard features may not work on macOS.' \
+            'Requires: brew install gtk4 vte3 sdl3 fontconfig' \
+            'Run ./edex-native in Terminal; this is not a standalone .app bundle.' > "dist/$NAME/RUN.txt"
+          tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-experimental
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish versioned archives
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    needs: [linux, archlinux, macos]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*'
+          path: dist
+          merge-multiple: true
+      - name: Generate SHA-256 checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum ./*.tar.gz > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true
