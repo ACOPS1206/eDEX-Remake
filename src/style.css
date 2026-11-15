@@ -221,7 +221,7 @@ button.virtual-key {
     min-height: 0;
     padding: 0;
     margin: 0;
-    border: 1px solid alpha(@accent, 0.42);
+    border: 1px solid transparent;
     border-radius: 5px;
     color: @accent;
     background: transparent;
@@ -231,7 +231,10 @@ button.virtual-key {
 }
 button.virtual-key:hover {
     background: alpha(@accent, 0.07);
-    border-color: alpha(@accent, 0.68);
+    border-color: transparent;
+}
+button.virtual-key.key-shape:hover {
+    border-color: alpha(@accent, 0.76);
 }
 button.virtual-key.key-wide {
     font-size: 19px;
@@ -307,7 +310,7 @@ button.virtual-key.key-active,
 button.virtual-key:active,
 button.virtual-key:checked {
     background: @accent;
-    border-color: @accent;
+    border-color: transparent;
     color: @shade;
     box-shadow: none;
 }
@@ -323,13 +326,20 @@ button.virtual-key.key-blink {
 }
 button.virtual-key.key-blink-peak {
     background: alpha(@accent, 0.20);
+    border-color: transparent;
+}
+button.virtual-key.key-shape.key-blink-peak {
     border-color: alpha(@accent, 0.68);
+}
+button.virtual-key.key-shape.key-active,
+button.virtual-key.key-shape:active {
+    border-color: @accent;
 }
 .focus-keyboard button.virtual-key {
     min-height: 12px;
     margin-top: 0;
     margin-bottom: 0;
-    border-color: alpha(@accent, 0.30);
+    border-color: transparent;
     color: transparent;
 }
 .focus-keyboard .key-main,
@@ -342,5 +352,8 @@ button.virtual-key.key-blink-peak {
 .focus-keyboard button.virtual-key.key-active,
 .focus-keyboard button.virtual-key.key-blink-peak {
     background: alpha(@accent, 0.20);
-    border-color: @accent;
+    border-color: transparent;
+}
+.focus-keyboard button.virtual-key.key-shape {
+    border-color: alpha(@accent, 0.50);
 }
