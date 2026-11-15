@@ -551,9 +551,9 @@ pub fn panel(
 }
 
 
-// EdexUi-2026 keyboard.css (2321bd5) specifies ordinary keys as 2.7vw,
-// end keys as 8.33vh, the two Enter parts as 9.72/7.78vh, and the spacebar
-// as 47.68vw? No: upstream explicitly uses 47.68vh.
+// EdexUi-2026 keyboard.css (2321bd5): ordinary keys 2.7vw,
+// edge keys 8.33vh, the two Enter parts 9.72/7.78vh,
+// and the spacebar 47.68vh.
 pub fn size_to_source(
     keyboard: &gtk::Box,
     viewport_width: i32,
