@@ -64,7 +64,12 @@ impl Feedback {
             if view.has_css_class("authentication-mode") != private {
                 if private {
                     // A password prompt must not expose key positions via animation.
-                    self.pressed.borrow_mut().clear();
+                    for (_, keys) in self.pressed.borrow_mut().drain() {
+                        for key in keys.into_iter().filter_map(|key| key.upgrade()) {
+                            key.remove_css_class("key-active");
+                            key.remove_css_class("key-blink");
+                        }
+                    }
                     for (_, (_, key)) in self.blinks.borrow_mut().drain() {
                         if let Some(key) = key.upgrade() {
                             key.remove_css_class("key-blink");
@@ -77,15 +82,42 @@ impl Feedback {
                     }
                     reset(&self.modifiers);
                     self.pending.borrow_mut().clear();
+                    if let Some(view) = self.view.upgrade() {
+                        view.remove_css_class("shift-on");
+                        view.remove_css_class("fn-on");
+                        view.remove_css_class("caps-on");
+                    }
                     view.add_css_class("authentication-mode");
                 } else {
                     view.remove_css_class("authentication-mode");
                 }
-                view.set_opacity(if private { 0.28 } else { 1.0 });
+                view.set_opacity(if private { 0.5 } else { 1.0 });
                 view.set_sensitive(!private);
             }
         }
         private
+    }
+
+    fn sync_modifier_classes(&self) {
+        let Some(view) = self.view.upgrade() else {
+            return;
+        };
+        let buttons = self.modifiers.borrow();
+        for (kind, class) in [
+            ("shift", "shift-on"),
+            ("caps", "caps-on"),
+            ("fn", "fn-on"),
+        ] {
+            let enabled = buttons.iter().any(|(flag, button)| {
+                *flag == kind
+                    && button.upgrade().is_some_and(|button| button.is_active())
+            });
+            if enabled {
+                view.add_css_class(class);
+            } else {
+                view.remove_css_class(class);
+            }
+        }
     }
 
     fn press(&self, widget: &gtk::Widget) {
@@ -140,7 +172,8 @@ pub fn panel(
     window: &gtk::ApplicationWindow,
     sounds: &Sounds,
 ) -> Keyboard {
-    let keyboard = gtk::Box::new(gtk::Orientation::Vertical, 3);
+    // Upstream keyboard rows are 5.28vh with 0.46vh gutters.
+    let keyboard = gtk::Box::new(gtk::Orientation::Vertical, 7);
     keyboard.add_css_class("virtual-keyboard");
     keyboard.set_homogeneous(true);
     keyboard.set_vexpand(true);
@@ -161,7 +194,7 @@ pub fn panel(
         };
         let grid = gtk::Grid::builder()
             .column_homogeneous(true)
-            .column_spacing(3)
+            .column_spacing(7)
             .hexpand(true)
             .build();
         grid.set_vexpand(true);
@@ -196,6 +229,7 @@ pub fn panel(
                 button.connect_clicked(move |button| {
                     if !key_feedback.refresh(&tabs) {
                         key_feedback.release(button.upcast_ref::<gtk::Widget>());
+                        key_feedback.sync_modifier_classes();
                         sounds.play("stdin");
                     }
                 });
@@ -217,6 +251,18 @@ pub fn panel(
                 let main = gtk::Label::new(Some(label));
                 main.add_css_class("key-main");
                 contents.set_child(Some(&main));
+                for (field, class) in [
+                    ("shift_name", "key-shift-active"),
+                    ("fn_name", "key-fn-active"),
+                ] {
+                    if let Some(text) = key[field].as_str().filter(|name| !name.is_empty()) {
+                        let active = gtk::Label::new(Some(text));
+                        active.add_css_class(class);
+                        active.set_halign(gtk::Align::Center);
+                        active.set_valign(gtk::Align::Center);
+                        contents.add_overlay(&active);
+                    }
+                }
                 for (field, class, horizontal, vertical) in [
                     ("shift_name", "key-shift", gtk::Align::Start, gtk::Align::Start),
                     ("alt_name", "key-alt", gtk::Align::End, gtk::Align::End),
@@ -325,6 +371,7 @@ pub fn panel(
                             )
                         }) {
                             reset(mods);
+                            feedback.sync_modifier_classes();
                             return;
                         }
                     }
@@ -370,6 +417,7 @@ pub fn panel(
                         }
                     }
                     reset(mods);
+                    feedback.sync_modifier_classes();
                 });
                 grid.attach(&button, column, 0, span, 1);
             }
