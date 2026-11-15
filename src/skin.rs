@@ -225,7 +225,7 @@ fn size_workspace(
         Dock::Files => 1,
     };
     if let Some(view) = keyboard.first_child().and_downcast::<gtk::Box>() {
-        crate::keyboard::size_to_source(&view, width, height, keyboard_width);
+        crate::keyboard::size_to_source(&view, width, height, keyboard_width, dock_height);
     }
 }
 
