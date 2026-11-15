@@ -380,6 +380,10 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
         .orientation(gtk::Orientation::Horizontal)
         .position(630)
         .height_request(235)
+        // The original lower panel occupies 31vh. Keep the GTK paned at
+        // its requested height instead of expanding into unused workspace.
+        .vexpand(false)
+        .valign(gtk::Align::End)
         .build();
     let file_dock = gtk::Box::new(gtk::Orientation::Vertical, 4);
     file_dock.append(&files.view);
