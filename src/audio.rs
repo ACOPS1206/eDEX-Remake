@@ -6,7 +6,13 @@ use std::{
     cell::RefCell,
     collections::{HashMap, hash_map::Entry},
     rc::Rc,
+    time::Duration,
 };
+use gtk4::glib;
+
+// A quarter-second of 44.1 kHz stereo f32 silence keeps PipeWire/PulseAudio
+// from suspending the output between key presses. It is never audible.
+const SILENCE: [u8; 88_200] = [0; 88_200];
 
 #[derive(Clone, Default)]
 pub struct Sounds(Option<Rc<Audio>>);
@@ -14,6 +20,7 @@ pub struct Sounds(Option<Rc<Audio>>);
 struct Audio {
     clips: RefCell<HashMap<&'static str, Clip>>,
     device: AudioDevice,
+    keep_alive_stream: AudioStreamOwner,
     subsystem: AudioSubsystem,
     _sdl: Sdl,
     volume: f32,
@@ -31,7 +38,21 @@ impl Sounds {
             return Self::default();
         }
         match Audio::new(volume) {
-            Ok(audio) => Self(Some(Rc::new(audio))),
+            Ok(audio) => {
+                let audio = Rc::new(audio);
+                let weak = Rc::downgrade(&audio);
+                glib::timeout_add_local(Duration::from_millis(100), move || {
+                    let Some(audio) = weak.upgrade() else {
+                        return glib::ControlFlow::Break;
+                    };
+                    if let Err(error) = audio.refill_silence() {
+                        eprintln!("eDEX audio keep-alive: {error}");
+                        return glib::ControlFlow::Break;
+                    }
+                    glib::ControlFlow::Continue
+                });
+                Self(Some(audio))
+            }
             Err(error) => {
                 eprintln!("eDEX audio: {error}");
                 Self::default()
@@ -59,9 +80,16 @@ impl Audio {
         let spec = AudioSpec::new(Some(44100), Some(2), Some(AudioFormat::F32LE));
         // Keep the playback route active during gaps so the next click doesn't wake it.
         let device = subsystem.open_playback_device(&spec)?;
+        // Binding and feeding a stream now, rather than on the first keystroke,
+        // gives the native audio backend time to start its playback route.
+        let keep_alive_stream = subsystem.new_playback_stream(&spec, None)?;
+        device.bind_stream(&keep_alive_stream)?;
+        keep_alive_stream.put_data(&SILENCE)?;
+        device.resume();
         let mut audio = Self {
             clips: RefCell::default(),
             device,
+            keep_alive_stream,
             subsystem,
             _sdl: sdl,
             volume,
@@ -73,6 +101,13 @@ impl Audio {
             Err(error) => eprintln!("eDEX audio (stdin): {error}"),
         }
         Ok(audio)
+    }
+
+    fn refill_silence(&self) -> Result<(), Error> {
+        if self.keep_alive_stream.queued_bytes()? < SILENCE.len() as i32 {
+            self.keep_alive_stream.put_data(&SILENCE)?;
+        }
+        Ok(())
     }
 
     fn load_clip(&self, name: &str) -> Result<Clip, Error> {
