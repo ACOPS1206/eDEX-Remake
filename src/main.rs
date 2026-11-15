@@ -249,9 +249,68 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
     system.add_css_class("system-column");
     network.add_css_class("network-column");
     center.set_hexpand(true);
+
+    // The upstream shell has a thin, theme-colored, clipped-corner outline
+    // (augmented border). GTK CSS cannot reproduce the cut corners, so draw
+    // that outline over the native terminal frame without intercepting input.
+    let terminal_frame = gtk::Overlay::new();
+    terminal_frame.add_css_class("terminal-frame");
+    terminal_frame.set_hexpand(true);
+    terminal_frame.set_vexpand(true);
+    center.append(&terminal_frame);
+
+    let terminal_content = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    terminal_content.add_css_class("terminal-frame-content");
+    terminal_content.set_margin_start(3);
+    terminal_content.set_margin_end(3);
+    terminal_content.set_margin_top(3);
+    terminal_content.set_margin_bottom(3);
+    terminal_frame.set_child(Some(&terminal_content));
+
+    let terminal_outline = gtk::DrawingArea::new();
+    terminal_outline.add_css_class("terminal-outline");
+    terminal_outline.set_can_target(false);
+    terminal_outline.set_hexpand(true);
+    terminal_outline.set_vexpand(true);
+    let fallback_accent = prefs.accent();
+    terminal_outline.set_draw_func(move |area, cr, width, height| {
+        if width < 25 || height < 25 {
+            return;
+        }
+        // Look up the current GTK theme color so the outline also follows
+        // dynamic theme changes made while this window stays open.
+        let (red, green, blue) = area
+            .style_context()
+            .lookup_color("accent")
+            .map(|color| {
+                (
+                    f64::from(color.red()),
+                    f64::from(color.green()),
+                    f64::from(color.blue()),
+                )
+            })
+            .unwrap_or(fallback_accent);
+        cr.set_source_rgba(red, green, blue, 0.52);
+        cr.set_line_width(1.7);
+        let w = f64::from(width) - 1.0;
+        let h = f64::from(height) - 1.0;
+        let corner = 12.0_f64.min(w / 8.0).min(h / 8.0);
+        cr.move_to(corner, 1.0);
+        cr.line_to(w - corner, 1.0);
+        cr.line_to(w, corner);
+        cr.line_to(w, h - corner);
+        cr.line_to(w - corner, h);
+        cr.line_to(corner, h);
+        cr.line_to(1.0, h - corner);
+        cr.line_to(1.0, corner);
+        cr.close_path();
+        let _ = cr.stroke();
+    });
+    terminal_frame.add_overlay(&terminal_outline);
+
     let terminal_header = gtk::Box::new(gtk::Orientation::Vertical, 4);
     terminal_header.append(&caption("TERMINAL", "eDEX-Remake"));
-    center.append(&terminal_header);
+    terminal_content.append(&terminal_header);
     let quick = gtk::Box::new(gtk::Orientation::Horizontal, 3);
     let file_button = quick_button("SYSTEM FILES", "OPEN FILE EXPLORER");
     let app_button = quick_button("APP MANAGER", "OPEN INSTALLED APPS");
@@ -300,7 +359,7 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
     stack.add_named(&explorer.view, Some("files"));
     stack.add_named(&explorer::app_manager(), Some("apps"));
     stack.set_visible_child_name("terminal");
-    center.append(&stack);
+    terminal_content.append(&stack);
     let toggle = |name, stack: &gtk::Stack, terminals: &Terminals| {
         let stack = stack.clone();
         let terminals = terminals.clone();
