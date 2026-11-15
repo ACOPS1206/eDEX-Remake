@@ -185,7 +185,7 @@ pub fn panel(
                 let button = gtk::ToggleButton::with_label(label);
                 button.add_css_class("virtual-key");
                 button.add_css_class("key-wide");
-                button.set_valign(gtk::Align::Center);
+                button.set_valign(gtk::Align::Fill);
                 button.set_vexpand(true);
                 button.set_focusable(false);
                 let key_feedback = feedback.clone();
@@ -241,11 +241,9 @@ pub fn panel(
                 if name.len() > 2 && !name.starts_with("ESCAPED") {
                     button.add_css_class("key-wide");
                 }
-                button.set_valign(if command == "\r" {
-                    gtk::Align::Fill
-                } else {
-                    gtk::Align::Center
-                });
+                // Every key uses its allocated row height instead of being
+                // vertically centered at the small CSS minimum height.
+                button.set_valign(gtk::Align::Fill);
                 button.set_vexpand(true);
                 let widget = button.clone().upcast::<gtk::Widget>();
                 for field in ["cmd", "shift_cmd", "alt_cmd", "altshift_cmd"] {
