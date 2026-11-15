@@ -51,9 +51,15 @@ PDF previews require Poppler. Audio and video previews use GTK’s GStreamer bac
 sudo pacman -S --needed poppler gst-plugins-base gst-plugins-good
 ```
 
+## Windows (WSL2 + WSLg)
+
+The Windows workflow builds a **native Windows x86_64 launcher executable**, not a native Windows copy of the GTK4/VTE application. The `windows-x86_64-wslg` archive combines that launcher with the Debian 13 x86_64 Linux build. This runs on Windows 10/11 through WSL2 with WSLg. The app's terminal, processes and performance monitoring refer to the **Debian WSL environment**, not Windows host services. For setup instructions, see [Windows README](windows-launcher/README-Windows.md).
+
+A fully native Windows port remains future work. This requires a Windows-compatible terminal UI/renderer and ConPTY instead of Unix VTE, plus Windows telemetry to replace Linux-specific `/proc` and `/sys`.
+
 ## GitHub Actions: builds and releases
 
-The [native build workflow](.github/workflows/build-release.yml) builds on pushes to `main`, pull requests, and manual `workflow_dispatch` runs. Successful CI jobs upload `.tar.gz` archives to the workflow run's **Artifacts** section (14-day retention). These contain `edex-native`, `assets/`, the license, and the README.
+The [native build workflow](.github/workflows/build-release.yml) builds on pushes to `main`, pull requests, and manual `workflow_dispatch` runs. Successful CI jobs upload `.tar.gz` and Windows `.zip` archives to the workflow run's **Artifacts** section (14-day retention). These contain `edex-native`, `assets/`, the license, and the README.
 
 | Archive | Build environment | Support |
 | --- | --- | --- |
@@ -61,6 +67,7 @@ The [native build workflow](.github/workflows/build-release.yml) builds on pushe
 | `eDEX-Remake-linux-aarch64-debian13.tar.gz` | Debian 13 ARM64 | Linux ARM64, GTK4/VTE/SDL3 shared libraries required |
 | `eDEX-Remake-linux-x86_64-arch.tar.gz` | Current Arch Linux x86_64 | Arch Linux, install system GTK4/VTE/SDL3 packages |
 | `eDEX-Remake-macos-arm64-experimental.tar.gz` | macOS 15 Apple Silicon | Experimental build; not an independent signed `.app` and Linux-specific metrics are not ported |
+| `eDEX-Remake-windows-x86_64-wslg.zip` | Windows 10/11 x86_64 launcher plus Debian 13 binary | Runs the Linux app through WSL2/WSLg; **not a native Windows build** |
 
 Linux archives contain **dynamically linked executables**, not fully static or distribution-independent binaries. On Debian 13, install runtime dependencies with `sudo apt install libgtk-4-1 libvte-2.91-gtk4-0 libsdl3-0 fontconfig`; on Arch, use `sudo pacman -S --needed gtk4 vte4 sdl3 fontconfig`. On macOS, Homebrew `gtk4 vte3 sdl3 fontconfig` must be installed before running the experimental binary. Runtime GTK and media extensions may need additional packages.
 
@@ -71,7 +78,7 @@ git tag -a v0.5.4 -m "eDEX-Remake v0.5.4"
 git push origin v0.5.4
 ```
 
-The tag workflow publishes successful platform archives and a `SHA256SUMS` file. macOS build failures are non-blocking because native macOS runtime compatibility has not been verified. **Windows builds are not yet available:** this version relies on Unix PTYs and Linux-specific `/proc` and `/sys` APIs, so a working Windows port must come before a Windows workflow.
+The tag workflow publishes successful Linux/macOS and Windows WSLg archives and a `SHA256SUMS` file. macOS build failures are non-blocking because native macOS runtime compatibility has not been verified. The Windows ZIP is a WSLg-based launcher for the Linux binary; a fully native Windows executable is not yet available.
 
 ## Settings and shortcuts
 
