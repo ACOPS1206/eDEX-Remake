@@ -53,6 +53,8 @@ struct Feedback {
     blinks: RefCell<HashMap<usize, (u64, glib::WeakRef<gtk::Widget>)>>,
     next_blink: Cell<u64>,
     enter_keys: RefCell<Vec<glib::WeakRef<gtk::Widget>>>,
+    physical_shift: Cell<bool>,
+    physical_caps: Cell<bool>,
     modifiers: Modifiers,
     pending: RefCell<Vec<String>>,
 }
@@ -83,6 +85,8 @@ impl Feedback {
                         key.remove_css_class("key-active");
                     }
                     reset(&self.modifiers);
+                    self.physical_shift.set(false);
+                    self.physical_caps.set(false);
                     self.pending.borrow_mut().clear();
                     if let Some(view) = self.view.upgrade() {
                         view.remove_css_class("shift-on");
@@ -113,7 +117,11 @@ impl Feedback {
             let enabled = buttons.iter().any(|(flag, button)| {
                 *flag == kind
                     && button.upgrade().is_some_and(|button| button.is_active())
-            });
+            }) || match kind {
+                "shift" => self.physical_shift.get(),
+                "caps" => self.physical_caps.get(),
+                _ => false,
+            };
             if enabled {
                 view.add_css_class(class);
             } else {
@@ -209,6 +217,8 @@ pub fn panel(
         blinks: RefCell::new(HashMap::new()),
         next_blink: Cell::new(0),
         enter_keys: RefCell::new(Vec::new()),
+        physical_shift: Cell::new(false),
+        physical_caps: Cell::new(false),
         modifiers: Modifiers::default(),
         pending: RefCell::new(Vec::new()),
     });
@@ -458,6 +468,14 @@ pub fn panel(
     let enter_on_press = feedback.enter_keys.borrow().clone();
     register.connect_key_pressed(move |_, key, code, _| {
         if !held.refresh(&active_tabs) {
+            if matches!(key, gdk::Key::Shift_L | gdk::Key::Shift_R) {
+                held.physical_shift.set(true);
+                held.sync_modifier_classes();
+            }
+            if key == gdk::Key::Caps_Lock && !held.pressed.borrow().contains_key(&code) {
+                held.physical_caps.set(!held.physical_caps.get());
+                held.sync_modifier_classes();
+            }
             let name = match key {
                 gdk::Key::Return | gdk::Key::KP_Enter => "\r".to_owned(),
                 gdk::Key::Escape => "\x1b".to_owned(),
@@ -471,6 +489,13 @@ pub fn panel(
                 gdk::Key::Alt_L | gdk::Key::Alt_R | gdk::Key::ISO_Level3_Shift => "alt".to_owned(),
                 gdk::Key::Control_L | gdk::Key::Control_R => "ctrl".to_owned(),
                 _ => key.to_unicode().map(String::from).unwrap_or_default(),
+            };
+            // GDK reports uppercase letters while Shift is held; the
+            // source layouts store letter commands in lowercase.
+            let name = if name.is_ascii() && name.len() == 1 {
+                name.to_ascii_lowercase()
+            } else {
+                name
             };
             let keys: Vec<gtk::Widget> = if name == "\r" {
                 enter_on_press.iter().filter_map(glib::WeakRef::upgrade).collect()
@@ -498,6 +523,10 @@ pub fn panel(
     let key_sounds = sounds.clone();
     register.connect_key_released(move |_, key, code, _| {
         let was_private = released.refresh(&released_tabs);
+        if matches!(key, gdk::Key::Shift_L | gdk::Key::Shift_R) {
+            released.physical_shift.set(false);
+            released.sync_modifier_classes();
+        }
         if let Some(widgets) = released.pressed.borrow_mut().remove(&code) {
             if !was_private {
                 for widget in widgets.into_iter().filter_map(|widget| widget.upgrade()) {
