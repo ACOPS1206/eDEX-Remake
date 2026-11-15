@@ -203,44 +203,140 @@ button.virtual-key.key-enter-lower { border-top-color: transparent; margin-left:
 .opening-log { padding: 8px 10px; font-family: monospace; font-size: 15px; }
 
 
-/* Keep only a narrow gutter between keys, including between rows. */
+/* Native GTK translation of EdexUi-2026 src/assets/css/keyboard.css
+ * (source revision 2321bd5). eDEX-Remake keeps the user-requested
+ * visible, subtle key outlines while preserving upstream proportions. */
+.virtual-keyboard {
+    border: none;
+    padding: 2px 8px;
+}
 button.virtual-key {
-    border-color: alpha(@accent, 0.42);
-    margin-top: 3px;
-    margin-bottom: 3px;
-    padding-top: 3px;
-    padding-bottom: 3px;
+    min-width: 0;
+    min-height: 48px;
+    padding: 0;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    border: 1px solid alpha(@accent, 0.42);
+    border-radius: 5px;
+    color: @accent;
+    background: transparent;
+    box-shadow: none;
+    font-weight: normal;
+    font-size: 24px;
 }
 button.virtual-key:hover {
-    border-color: alpha(@accent, 0.66);
+    background: alpha(@accent, 0.07);
+    border-color: alpha(@accent, 0.68);
 }
-button.virtual-key.key-flash {
-    background: @accent;
-    color: @shade;
-    border-color: @accent;
-    box-shadow: 0 0 7px alpha(@accent, 0.43);
+button.virtual-key.key-wide {
+    font-size: 19px;
 }
-button.virtual-key.key-echo {
-    background: alpha(@accent, 0.20);
+button.virtual-key.key-shape {
+    border: 2px solid alpha(@accent, 0.50);
+}
+button.virtual-key.key-spacebar {
+    min-height: 38px;
+}
+button.virtual-key.key-enter-upper {
+    border-bottom-right-radius: 0;
+    border-bottom-color: transparent;
+    margin-bottom: -2px;
+}
+button.virtual-key.key-enter-lower {
+    border-top-left-radius: 0;
+    border-top-color: transparent;
+    margin-left: 24px;
+    margin-top: -2px;
+}
+button.virtual-key.arrow-key {
+    min-width: 29px;
+    min-height: 34px;
+    border-radius: 4px;
+}
+.key-legends {
+    margin: 0;
+    padding: 0;
+}
+.key-main {
     color: @accent;
-    border-color: alpha(@accent, 0.75);
-    box-shadow: 0 0 5px alpha(@accent, 0.18);
+    font-size: 24px;
+    font-weight: normal;
 }
-button.virtual-key.key-flash .key-shift {
-    color: alpha(@shade, 0.76);
+button.virtual-key.key-wide .key-main {
+    font-size: 19px;
+}
+.key-shift, .key-alt, .key-altshift, .key-fn {
+    color: alpha(@accent, 0.85);
+    font-size: 12px;
+    font-weight: normal;
+}
+.key-fn {
+    opacity: 0;
+}
+.key-shift-active, .key-fn-active {
+    color: @accent;
+    font-size: 24px;
+    opacity: 0;
+}
+.virtual-keyboard.shift-on .key-shift-active,
+.virtual-keyboard.caps-on .key-shift-active {
+    opacity: 1;
+}
+.virtual-keyboard.shift-on .key-main,
+.virtual-keyboard.caps-on .key-main {
+    opacity: 0.12;
+}
+.virtual-keyboard.fn-on .key-fn-active {
+    opacity: 1;
+}
+.virtual-keyboard.fn-on .key-fn {
+    opacity: 1;
+}
+.virtual-keyboard.fn-on .key-main,
+.virtual-keyboard.fn-on .key-shift,
+.virtual-keyboard.fn-on .key-shift-active,
+.virtual-keyboard.fn-on .key-alt,
+.virtual-keyboard.fn-on .key-altshift {
+    opacity: 0;
+}
+button.virtual-key.key-active,
+button.virtual-key:active,
+button.virtual-key:checked {
+    background: @accent;
+    border-color: @accent;
+    color: @shade;
+    box-shadow: none;
+}
+button.virtual-key.key-active .key-main,
+button.virtual-key:active .key-main,
+button.virtual-key:checked .key-main,
+button.virtual-key.key-active .key-shift-active,
+button.virtual-key.key-active .key-fn-active {
+    color: @shade;
+}
+button.virtual-key.key-blink {
+    background: transparent;
+}
+button.virtual-key.key-blink-peak {
+    background: alpha(@accent, 0.20);
+    border-color: alpha(@accent, 0.68);
 }
 .focus-keyboard button.virtual-key {
-    border-color: alpha(@accent, 0.30);
+    min-height: 12px;
     margin-top: 0;
     margin-bottom: 0;
+    border-color: alpha(@accent, 0.30);
+    color: transparent;
 }
-.focus-keyboard button.virtual-key.key-flash {
-    background: @accent;
-    color: @shade;
-    border-color: @accent;
+.focus-keyboard .key-main,
+.focus-keyboard .key-shift,
+.focus-keyboard .key-alt,
+.focus-keyboard .key-altshift,
+.focus-keyboard .key-fn {
+    opacity: 0;
 }
-.focus-keyboard button.virtual-key.key-echo {
+.focus-keyboard button.virtual-key.key-active,
+.focus-keyboard button.virtual-key.key-blink-peak {
     background: alpha(@accent, 0.20);
-    color: @accent;
-    border-color: alpha(@accent, 0.75);
+    border-color: @accent;
 }
