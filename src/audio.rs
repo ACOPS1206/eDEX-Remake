@@ -19,8 +19,8 @@ pub struct Sounds(Option<Rc<Audio>>);
 
 struct Audio {
     clips: RefCell<HashMap<&'static str, Clip>>,
-    device: AudioDevice,
     keep_alive_stream: AudioStreamOwner,
+    device: AudioDevice,
     subsystem: AudioSubsystem,
     _sdl: Sdl,
     volume: f32,
@@ -88,8 +88,8 @@ impl Audio {
         device.resume();
         let mut audio = Self {
             clips: RefCell::default(),
-            device,
             keep_alive_stream,
+            device,
             subsystem,
             _sdl: sdl,
             volume,
