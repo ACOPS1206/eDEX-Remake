@@ -265,19 +265,24 @@ fn change_directory(state: &Rc<State>, path: PathBuf) {
         render(state);
         return;
     }
-    // Quote the path for the interactive shell before sending it to the PTY.
-    let quoted = glib::shell_quote(path.as_os_str());
-    let quoted = quoted.as_os_str().as_bytes();
-    if quoted.iter().any(u8::is_ascii_control) {
+    let bytes = path.as_os_str().as_bytes();
+    if bytes.iter().any(u8::is_ascii_control) {
         state
             .status
             .set_text("This directory name contains terminal control bytes.");
         return;
     }
     // Ctrl+E and Ctrl+U clear the prompt before submitting a separate command.
-    let mut command = b"\x05\x15cd ".to_vec();
-    command.extend_from_slice(quoted);
-    command.push(b'\r');
+    let mut command = b"\x05\x15cd '".to_vec();
+    for &byte in bytes {
+        if matches!(byte, b'\\' | b'\'') {
+            // Escape outside single quotes, where fish and POSIX shells agree.
+            command.extend_from_slice(&[b'\'', b'\\', byte, b'\'']);
+        } else {
+            command.push(byte);
+        }
+    }
+    command.extend_from_slice(b"'\r");
     if !state.tabs.write_to_idle_shell(&command) {
         state
             .status

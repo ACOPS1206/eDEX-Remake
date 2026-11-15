@@ -198,7 +198,7 @@ struct Dashboard {
 fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) {
     let window = gtk::ApplicationWindow::builder()
         .application(app)
-        .title("EdexUi-2026")
+        .title("eDEX-Remake")
         .decorated(false)
         .default_width(1440)
         .default_height(850)
@@ -248,7 +248,7 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
     system.add_css_class("system-column");
     network.add_css_class("network-column");
     center.set_hexpand(true);
-    center.append(&caption("TERMINAL", "EdexUi-2026"));
+    center.append(&caption("TERMINAL", "eDEX-Remake"));
     let quick = gtk::Box::new(gtk::Orientation::Horizontal, 3);
     let file_button = quick_button("SYSTEM FILES", "OPEN FILE EXPLORER");
     let app_button = quick_button("APP MANAGER", "OPEN INSTALLED APPS");

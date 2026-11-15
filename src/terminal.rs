@@ -154,17 +154,13 @@ impl Terminals {
         let Some(session) = self.active() else {
             return false;
         };
-        let (Some(pid), Some(pty)) = (session.pid.get(), session.terminal.pty()) else {
+        let Some(foreground) = session.foreground_group() else {
             return false;
         };
-        // TIOCGPGRP on the PTY master identifies the process group receiving keystrokes.
-        let (foreground, shell_group) = unsafe {
-            (
-                libc::tcgetpgrp(std::os::fd::AsRawFd::as_raw_fd(&pty.fd())),
-                libc::getpgid(pid.0),
-            )
+        let Some(shell) = session.pid.get() else {
+            return false;
         };
-        if foreground <= 0 || foreground != shell_group {
+        if foreground != unsafe { libc::getpgid(shell.0) } {
             return false;
         }
         session.terminal.feed_child(data);
@@ -188,17 +184,38 @@ impl Terminals {
 }
 
 impl Session {
+    fn foreground_group(&self) -> Option<libc::pid_t> {
+        let pty = self.terminal.pty()?;
+        let group = unsafe { libc::tcgetpgrp(std::os::fd::AsRawFd::as_raw_fd(&pty.fd())) };
+        (group > 0).then_some(group)
+    }
+
     fn cwd(&self) -> Option<PathBuf> {
-        let pid = self.pid.get()?;
-        fs::read_link(format!("/proc/{}/cwd", pid.0))
-            .ok()
-            .or_else(|| {
-                self.terminal
-                    .current_directory_uri()
-                    .and_then(|uri| gio::File::for_uri(&uri).path())
+        let pid = self.pid.get()?.0;
+        // A fish started interactively from the configured shell has its own foreground job.
+        let pid = self
+            .foreground_group()
+            .filter(|&group| {
+                group != pid
+                    && fs::read_link(format!("/proc/{group}/exe"))
+                        .is_ok_and(|path| path.file_name().is_some_and(|name| name == "fish"))
             })
+            .unwrap_or(pid);
+        fs::read_link(format!("/proc/{pid}/cwd")).ok().or_else(|| {
+            let uri = self.terminal.current_directory_uri()?;
+            let (path, host) = glib::filename_from_uri(&uri).ok()?;
+            host.is_none_or(|name| {
+                name.is_empty() || name == "localhost" || name == glib::host_name()
+            })
+            .then_some(path)
+        })
     }
 }
+
+// Install a portable OSC 7 report without replacing the user's prompt or fish config.
+const FISH_CWD_HOOK: &str = r#"function __edex_report_cwd --on-event fish_prompt
+    printf '\e]7;file://%s\a' (string escape --style=url -- "$PWD")
+end"#;
 
 fn open_tab(
     slots: &RefCell<Vec<Option<Session>>>,
@@ -260,7 +277,7 @@ fn create_session(
     if main {
         terminal.feed(
             concat!(
-                "\x1b[1mWelcome to EdexUi-2026 - native port ",
+                "\x1b[1mWelcome to eDEX-Remake ",
                 env!("CARGO_PKG_VERSION"),
                 "\x1b[0m\r\n"
             )
@@ -356,9 +373,14 @@ fn spawn(
     let status = status.clone();
     let restart = restart.clone();
     let shell_for_label = shell.clone();
-    let argv = std::iter::once(shell.as_str())
-        .chain(args.iter().map(String::as_str))
-        .collect::<Vec<_>>();
+    let mut argv = vec![shell.as_str()];
+    if Path::new(shell)
+        .file_name()
+        .is_some_and(|name| name == "fish")
+    {
+        argv.extend(["--init-command", FISH_CWD_HOOK]);
+    }
+    argv.extend(args.iter().map(String::as_str));
     let cwd = cwd.and_then(Path::to_str);
     terminal.spawn_async(
         PtyFlags::DEFAULT,

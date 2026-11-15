@@ -1,4 +1,4 @@
-# eDEX-Remake 0.5.0
+# eDEX-Remake 0.5.1
 
 [EdexUi-2026](https://github.com/Ali-A-Alwahed/EdexUi-2026) 커밋 `2321bd5`과 그 위에 적용한 IPC·레이아웃 패치를 기준으로 삼았습니다. GTK4가 화면과 입력을 처리하고, VTE가 각 탭의 로컬 PTY를 처리합니다. 이 저장소에는 Rust 소스, 원본 테마와 미디어, 프로젝트 라이선스가 들어 있습니다.
 
@@ -7,12 +7,12 @@
 저장소를 받은 뒤 아래 명령으로 빌드합니다. 배포할 때는 실행 파일 옆에 `assets` 디렉터리를 함께 둡니다. Cage는 물리 TTY에서 일반 사용자로 실행합니다.
 
 ```bash
-sudo pacman -S --needed rust base-devel gtk4 vte4 fontconfig cage
+sudo pacman -S --needed rust base-devel gtk4 vte4 fontconfig sdl3 cage
 cargo build --release --locked
 cage -s -- env GDK_BACKEND=wayland "$PWD/target/release/edex-native"
 ```
 
-효과음은 로그인 세션의 `pw-play` 또는 `paplay`를 우선 사용합니다. 두 플레이어를 사용할 수 없으면 GTK GStreamer로 재생합니다. 미디어 미리 보기는 GTK GStreamer, PDF 미리 보기는 Poppler를 사용합니다.
+효과음은 SDL3의 기본 오디오 장치에서 재생합니다. 같은 효과음이 끝나기 전에 다시 입력해도 두 소리가 재생됩니다. 미디어 미리 보기는 GTK GStreamer, PDF 미리 보기는 Poppler를 사용합니다.
 
 ```bash
 sudo pacman -S gst-plugins-base gst-plugins-good poppler
@@ -22,7 +22,7 @@ sudo pacman -S gst-plugins-base gst-plugins-good poppler
 
 ## SYSTEM과 상단 버튼
 
-- SYSTEM 아래의 **Files** 또는 **File Manager**를 누르면 활성 터미널 탭의 디렉터리를 열고 이후 경로를 따라갑니다. 폴더를 누르면 셸 프롬프트에 입력 중인 줄을 지우고 해당 디렉터리로 이동합니다.
+- SYSTEM 아래의 **Files** 또는 **File Manager**를 누르면 활성 터미널 탭의 디렉터리를 열고 이후 경로를 따라갑니다. fish는 프롬프트에서 작업 경로를 보고합니다. 폴더를 누르면 셸 프롬프트에 입력 중인 줄을 지우고 해당 디렉터리로 이동합니다.
 - **Shortcuts**를 누르면 설정, 테마, 키보드, 프로젝트와 설치 앱 항목으로 돌아갑니다.
 - 설정에서 **Show top file manager button**과 **Show top installed apps button**을 각각 끌 수 있습니다. 두 버튼을 꺼도 SYSTEM과 키보드 단축키에서 접근할 수 있습니다.
 
@@ -62,7 +62,7 @@ sudo pacman -S gst-plugins-base gst-plugins-good poppler
 ## 소스 빌드
 
 ```bash
-sudo pacman -S rust base-devel gtk4 vte4 fontconfig
+sudo pacman -S rust base-devel gtk4 vte4 fontconfig sdl3
 cargo build --release --locked
 cargo test --locked
 ```

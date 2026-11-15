@@ -76,13 +76,14 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
 name = "edex-native"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "async-channel",
  "gtk4",
  "include_dir",
  "libc",
  "maxminddb",
+ "sdl3",
  "serde_json",
  "socket2",
  "sysinfo",
@@ -492,6 +493,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3bd1574e617a9a6c1f8f8181bd7e841e1f20e4277607ef28945765188d6284d4"
 
 [[package]]
+name = "lazy_static"
+version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -634,6 +641,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
 dependencies = [
  "semver",
+]
+
+[[package]]
+name = "sdl3"
+version = "0.16.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4ab4535cb62004c5a0362fae83b45af619abd855fe0ec60620f74ac68c9e2e6"
+dependencies = [
+ "bitflags",
+ "lazy_static",
+ "libc",
+ "sdl3-sys",
+]
+
+[[package]]
+name = "sdl3-sys"
+version = "0.5.12+SDL3-3.2.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78b9638d20441d9641bf479d5ec737a46e159549df3a03d1c09d6387f5adf128"
+dependencies = [
+ "pkg-config",
 ]
 
 [[package]]

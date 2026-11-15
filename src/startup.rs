@@ -126,7 +126,7 @@ fn draw_title(
         return;
     }
     let welcome = seconds >= 3.7;
-    let title = if welcome { greeting } else { "EdexUi-2026" };
+    let title = if welcome { greeting } else { "eDEX-Remake" };
     cr.select_font_face(
         "United Sans Rg Md",
         cairo::FontSlant::Normal,
