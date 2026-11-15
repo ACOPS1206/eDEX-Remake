@@ -278,6 +278,24 @@ pub fn open(parent: &gtk::ApplicationWindow, prefs: &theme::Preferences) {
             "Terminal colors",
             selected_scheme.clone(),
         ),
+        (
+            palette::TERMINAL_BACKGROUND,
+            "Terminal background",
+            Field::Text(
+                gtk::Entry::builder()
+                    .text(
+                        values[palette::TERMINAL_BACKGROUND]
+                            .as_str()
+                            .unwrap_or_default(),
+                    )
+                    .placeholder_text("From terminal color scheme")
+                    .tooltip_text(
+                        "Enter a color such as #121820. Clear to use the scheme background.",
+                    )
+                    .width_chars(30)
+                    .build(),
+            ),
+        ),
         ("termCustomColors", "Custom terminal colors", palette_field),
         (
             "showFileManagerButton",
@@ -499,6 +517,13 @@ pub fn open(parent: &gtk::ApplicationWindow, prefs: &theme::Preferences) {
                         value.parse::<u32>().unwrap_or(24).into()
                     }
                     ("iface", Value::String(value)) if value == "Automatic" => false.into(),
+                    (palette::TERMINAL_BACKGROUND, Value::String(value)) => {
+                        let value = value.trim();
+                        if !value.is_empty() && gtk::gdk::RGBA::parse(value).is_err() {
+                            return Err("Enter a valid terminal background color such as #121820, or leave it blank.".into());
+                        }
+                        value.into()
+                    }
                     (_, value) => value.clone(),
                 };
             }

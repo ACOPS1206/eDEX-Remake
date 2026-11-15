@@ -3,12 +3,10 @@ use sdl3::{
     audio::{AudioDevice, AudioFormat, AudioSpec, AudioSpecWAV, AudioStreamOwner},
 };
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     collections::{HashMap, hash_map::Entry},
     rc::Rc,
-    time::{Duration, Instant},
 };
-use vte4::gtk::glib;
 
 #[derive(Clone, Default)]
 pub struct Sounds(Option<Rc<Audio>>);
@@ -19,7 +17,6 @@ struct Audio {
     subsystem: AudioSubsystem,
     _sdl: Sdl,
     volume: f32,
-    last_play: Cell<Option<Instant>>,
 }
 
 struct Clip {
@@ -55,37 +52,58 @@ impl Audio {
     fn new(volume: f32) -> Result<Self, Error> {
         // GTK owns the application lifecycle, including termination from Cage.
         sdl3::hint::set("SDL_NO_SIGNAL_HANDLERS", "1");
+        // Mix short key clicks in smaller blocks when the backend supports it.
+        sdl3::hint::set("SDL_AUDIO_DEVICE_SAMPLE_FRAMES", "256");
         let sdl = sdl3::init()?;
         let subsystem = sdl.audio()?;
         let spec = AudioSpec::new(Some(44100), Some(2), Some(AudioFormat::F32LE));
+        // Keep the playback route active during gaps so the next click doesn't wake it.
         let device = subsystem.open_playback_device(&spec)?;
-        if !device.pause() {
-            return Err(sdl3::get_error());
-        }
-        Ok(Self {
-            clips: RefCell::new(HashMap::new()),
+        let mut audio = Self {
+            clips: RefCell::default(),
             device,
             subsystem,
             _sdl: sdl,
             volume,
-            last_play: Cell::new(None),
+        };
+        match audio.load_clip("stdin") {
+            Ok(clip) => {
+                audio.clips.get_mut().insert("stdin", clip);
+            }
+            Err(error) => eprintln!("eDEX audio (stdin): {error}"),
+        }
+        Ok(audio)
+    }
+
+    fn load_clip(&self, name: &str) -> Result<Clip, Error> {
+        let path = crate::theme::assets_path()
+            .join("audio")
+            .join(format!("{name}.wav"));
+        let wav = AudioSpecWAV::load_wav(path)?;
+        let voice = self.open_voice(&wav)?;
+        Ok(Clip {
+            wav,
+            voices: vec![voice],
         })
     }
 
-    fn play(self: &Rc<Self>, name: &'static str) -> Result<(), Error> {
+    fn open_voice(&self, wav: &AudioSpecWAV) -> Result<AudioStreamOwner, Error> {
+        let spec = AudioSpec::new(
+            Some(wav.freq),
+            Some(i32::from(wav.channels)),
+            Some(wav.format),
+        );
+        let voice = self.subsystem.new_playback_stream(&spec, None)?;
+        voice.set_gain(self.volume)?;
+        self.device.bind_stream(&voice)?;
+        Ok(voice)
+    }
+
+    fn play(&self, name: &'static str) -> Result<(), Error> {
         let mut clips = self.clips.borrow_mut();
         let clip = match clips.entry(name) {
             Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(entry) => {
-                let path = crate::theme::assets_path()
-                    .join("audio")
-                    .join(format!("{name}.wav"));
-                let wav = AudioSpecWAV::load_wav(path)?;
-                entry.insert(Clip {
-                    wav,
-                    voices: vec![],
-                })
-            }
+            Entry::Vacant(entry) => entry.insert(self.load_clip(name)?),
         };
 
         // A stream that is still playing can overlap the next instance of the same sound.
@@ -96,46 +114,11 @@ impl Audio {
         {
             Some(voice) => voice,
             None => {
-                let spec = AudioSpec::new(
-                    Some(clip.wav.freq),
-                    Some(i32::from(clip.wav.channels)),
-                    Some(clip.wav.format),
-                );
-                let voice = self.subsystem.new_playback_stream(&spec, None)?;
-                voice.set_gain(self.volume)?;
-                self.device.bind_stream(&voice)?;
-                clip.voices.push(voice);
+                clip.voices.push(self.open_voice(&clip.wav)?);
                 clip.voices.last().unwrap()
             }
         };
         voice.put_data(clip.wav.buffer())?;
-        voice.flush()?;
-        if self.last_play.replace(Some(Instant::now())).is_none() {
-            if !self.device.resume() {
-                self.last_play.set(None);
-                return Err(sdl3::get_error());
-            }
-            let audio = Rc::downgrade(self);
-            let mut drained = None;
-            glib::timeout_add_local(Duration::from_millis(500), move || {
-                let Some(audio) = audio.upgrade() else {
-                    return glib::ControlFlow::Break;
-                };
-                let last_play = audio.last_play.get();
-                if drained.is_some() && drained == last_play {
-                    audio.device.pause();
-                    audio.last_play.set(None);
-                    return glib::ControlFlow::Break;
-                }
-                let all_drained = audio.clips.borrow().values().all(|clip| {
-                    clip.voices
-                        .iter()
-                        .all(|voice| voice.queued_bytes().unwrap_or(0) == 0)
-                });
-                drained = last_play.filter(|_| all_drained);
-                glib::ControlFlow::Continue
-            });
-        }
-        Ok(())
+        voice.flush()
     }
 }

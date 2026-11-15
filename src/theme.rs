@@ -198,9 +198,11 @@ impl Preferences {
 
     pub fn apply_terminal(&self, terminal: &Terminal) {
         let colors = self.terminal_palette();
+        let background =
+            palette::color(&self.values[palette::TERMINAL_BACKGROUND]).unwrap_or(colors.background);
         terminal.set_colors(
             Some(&colors.foreground),
-            Some(&colors.background),
+            Some(&background),
             &colors.ansi.iter().collect::<Vec<_>>(),
         );
         terminal.set_color_highlight(Some(&colors.selection));

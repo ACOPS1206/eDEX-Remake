@@ -26,6 +26,8 @@ The GTK and Cairo globe reuses the upstream map tiles, rotation, and opening sca
 - **Appearance and input** — Includes 21 upstream themes, 18 keyboard layouts, the boot log and glitch sequence, and sound effects for physical and on-screen keys. Terminal color schemes include **Follow theme**, Catppuccin Latte, Frappé, Macchiato, and Mocha, Nord, and **Custom**. Custom swatches let you set text, background, cursor, selection, and all 16 ANSI colors. [Catppuccin](https://github.com/catppuccin/alacritty) · [Nord](https://www.nordtheme.com/docs/colors-and-palettes/)
 - **Password prompts** — The on-screen keyboard hides automatically during supported prompts such as `sudo`, `su`, and `systemd-ask-password` in the active terminal. It returns when normal input resumes. Use `Ctrl+Shift+P` to hide it manually when a remote or nested terminal does not report its echo state to the local PTY.
 
+While **Audio effects** is enabled, eDEX-Remake keeps the SDL3 playback device active between key presses to avoid gaps when the output wakes up.
+
 ## Build on Arch Linux
 
 ```bash
@@ -46,6 +48,8 @@ sudo pacman -S --needed poppler gst-plugins-base gst-plugins-good
 ## Settings and shortcuts
 
 Open settings with `Ctrl+Shift+S` and select **Save to Disk**. Changes to **Terminal font**, **Terminal font size**, and **Terminal colors** apply immediately while preserving running shells and scrollback. **Show top file manager button** and **Show top installed apps button** control the two header buttons independently. Both features also remain accessible from SYSTEM and their shortcuts.
+
+Enter a color such as `#121820` in **Terminal background** to override the background of the selected terminal color scheme. Clear the field and save to restore the scheme’s background.
 
 Settings are stored under `$XDG_CONFIG_HOME` or `~/.config`. The app reuses an existing `EdexUi-2026/settings.json` or `eDEX-UI/settings.json` when present. It also reads supported app actions and shell command shortcuts from the upstream `shortcuts.json` format.
 

@@ -29,12 +29,14 @@ pub const ANSI_COLORS: [&str; 16] = [
     "Bright cyan",
     "Bright white",
 ];
-pub const STYLE_SETTINGS: [&str; 5] = [
+pub const TERMINAL_BACKGROUND: &str = "termBackground";
+pub const STYLE_SETTINGS: [&str; 6] = [
     "termFontFamily",
     "termFontSize",
     "termLigatures",
     "termColorScheme",
     "termCustomColors",
+    TERMINAL_BACKGROUND,
 ];
 
 pub struct TerminalPalette {
