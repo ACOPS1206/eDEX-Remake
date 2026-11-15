@@ -205,8 +205,9 @@ pub fn panel(
     window: &gtk::ApplicationWindow,
     sounds: &Sounds,
 ) -> Keyboard {
-    // Upstream keyboard rows are 5.28vh with 0.46vh gutters.
-    let keyboard = gtk::Box::new(gtk::Orientation::Vertical, 7);
+    // Source rows are 5.28vh high with 0.46vh vertical margins.
+    // GtkFixed keeps independently sized keys and split Enter aligned.
+    let keyboard = gtk::Box::new(gtk::Orientation::Vertical, 0);
     keyboard.add_css_class("virtual-keyboard");
     keyboard.set_homogeneous(false);
     keyboard.set_vexpand(true);
@@ -227,13 +228,13 @@ pub fn panel(
         let Some(keys) = layout[row].as_array() else {
             continue;
         };
-        // The original uses independent flex rows with per-key widths.
-        // Homogeneous GTK grid columns previously erased those proportions.
-        let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        // Exact coordinates are calculated after the viewport is sized.
+        // GtkBox centering made split Enter and narrow modifier keys drift.
+        let row_box = gtk::Fixed::new();
         row_box.add_css_class("keyboard-row");
         row_box.set_halign(gtk::Align::Center);
-        row_box.set_valign(gtk::Align::Center);
-        row_box.set_vexpand(true);
+        row_box.set_valign(gtk::Align::Start);
+        row_box.set_vexpand(false);
         for key in keys {
             let key = key.clone();
             let command = key["cmd"].as_str().unwrap_or("");
@@ -270,7 +271,7 @@ pub fn panel(
                 indicators
                     .entry(kind.to_owned())
                     .or_insert_with(|| widget.downgrade());
-                row_box.append(&button);
+                row_box.put(&button, 0.0, 0.0);
             } else {
                 let button = gtk::Button::new();
                 // Recreate the upstream h1/h2/h3/h4/h5 key legends using
@@ -448,7 +449,7 @@ pub fn panel(
                     reset(mods);
                     feedback.sync_modifier_classes();
                 });
-                row_box.append(&button);
+                row_box.put(&button, 0.0, 0.0);
             }
         }
         keyboard.append(&row_box);
@@ -462,8 +463,16 @@ pub fn panel(
         };
         let viewport_width = window.width().max(window.default_width()).max(1);
         let viewport_height = window.height().max(window.default_height()).max(1);
-        let dock_width = (viewport_width * 56 / 100).max(1);
-        size_to_source(view, viewport_width, viewport_height, dock_width);
+        let parent = view.parent();
+        let dock_width = parent.as_ref().map(|widget| widget.width())
+            .filter(|width| *width > 100)
+            .unwrap_or((viewport_width * 56 / 100).max(1));
+        let dock_height = if parent.as_ref().is_some_and(|widget| widget.has_css_class("focus-keyboard")) {
+            108
+        } else {
+            (viewport_height * 31 / 100).max(1)
+        };
+        size_to_source(view, viewport_width, viewport_height, dock_width, dock_height);
     });
     let register = gtk::EventControllerKey::new();
     register.set_propagation_phase(gtk::PropagationPhase::Capture);
@@ -559,77 +568,124 @@ pub fn size_to_source(
     viewport_width: i32,
     viewport_height: i32,
     available_width: i32,
+    available_height: i32,
 ) {
     let vw = viewport_width.max(1) as f64;
     let vh = viewport_height.max(1) as f64;
-    let regular = (vw * 0.027).round().max(1.0);
-    let edge = (vh * 0.0833).round().max(1.0);
-    let upper_enter = (vh * 0.0972).round().max(1.0);
-    let lower_enter = (vh * 0.0778).round().max(1.0);
-    let spacebar = (vh * 0.4768).round().max(1.0);
-    let margin = (vh * 0.0046).round().max(1.0);
-    let normal_height = (vw * 0.027).round().max(1.0);
-    let space_height = (vh * 0.0352).round().max(1.0);
-    let lower_enter_height = (vh * 0.06389).round().max(1.0);
+    let regular = vw * 0.027;
+    let edge = vh * 0.0833;
+    let enter_upper = vh * 0.0972;
+    let enter_lower = vh * 0.0778;
+    let spacebar = vh * 0.4768;
+    let gutter = vh * 0.0046;
+    let regular_height = vw * 0.027;
+    let space_height = vh * 0.0352;
+    let enter_lower_height = vh * 0.06389;
+    let row_height = vh * 0.0528;
+    let row_pitch = vh * 0.062; // 5.28vh row + 2 × 0.46vh margin
+    let row_margin = gutter;
 
-    let mut rows: Vec<Vec<(gtk::Widget, f64, f64, f64)>> = Vec::new();
-    let mut max_row_width: f64 = 1.0;
+    struct KeyGeometry {
+        widget: gtk::Widget,
+        width: f64,
+        height: f64,
+        gutter: f64,
+        enter_lower: bool,
+    }
+    let mut rows: Vec<(gtk::Fixed, Vec<KeyGeometry>, f64)> = Vec::new();
+    let mut maximum: f64 = 1.0;
     for (row_index, row) in children(keyboard.upcast_ref::<gtk::Widget>())
         .into_iter()
         .enumerate()
     {
-        let keys = children(&row);
+        let Ok(fixed) = row.downcast::<gtk::Fixed>() else {
+            continue;
+        };
+        let keys = children(fixed.upcast_ref::<gtk::Widget>());
         let last = keys.len().saturating_sub(1);
-        let mut total_width = 0.0;
-        let mut dimensions = Vec::new();
-
-        for (index, key) in keys.into_iter().enumerate() {
-            let width = if key.has_css_class("key-spacebar") {
+        let mut total = 0.0;
+        let mut geometry = Vec::new();
+        for (index, widget) in keys.into_iter().enumerate() {
+            let width = if widget.has_css_class("key-spacebar") {
                 spacebar
-            } else if key.has_css_class("key-enter-upper") {
-                upper_enter
-            } else if key.has_css_class("key-enter-lower") {
-                lower_enter
+            } else if widget.has_css_class("key-enter-upper") {
+                enter_upper
+            } else if widget.has_css_class("key-enter-lower") {
+                enter_lower
             } else if index == 0 || (index == last && row_index == 0) {
                 edge
             } else {
                 regular
             };
-            let height = if key.has_css_class("key-spacebar") {
+            let height = if widget.has_css_class("key-spacebar") {
                 space_height
-            } else if key.has_css_class("key-enter-lower") {
-                lower_enter_height
+            } else if widget.has_css_class("key-enter-lower") {
+                enter_lower_height
             } else {
-                normal_height
+                regular_height
             };
-            // In the upstream layout, the final three arrow keys have no
-            // horizontal gutters; other keys have 0.46vh margins on each side.
-            let gutter = if row_index == 4 && index >= last.saturating_sub(2) {
+            let gap = if row_index == 4 && index >= last.saturating_sub(2) {
                 0.0
             } else {
-                margin
+                gutter
             };
-            total_width += width + gutter * 2.0;
-            dimensions.push((key, width, height, gutter));
+            total += width + 2.0 * gap;
+            geometry.push(KeyGeometry {
+                enter_lower: widget.has_css_class("key-enter-lower"),
+                widget,
+                width,
+                height,
+                gutter: gap,
+            });
         }
-        max_row_width = max_row_width.max(total_width);
-        rows.push(dimensions);
+        maximum = maximum.max(total);
+        rows.push((fixed, geometry, total));
     }
 
-    // Fit the complete original geometry, not each individual row, inside
-    // the actual paned width. Keep the key width ratios on smaller displays.
-    let fit = ((available_width - 16).max(1) as f64 / max_row_width)
-        .clamp(0.01, 1.0);
-    for row in rows {
-        for (key, width, height, gutter) in row {
-            key.set_size_request(
-                (width * fit).round().max(1.0) as i32,
-                (height * fit).round().max(1.0) as i32,
-            );
-            let gutter = (gutter * fit).round() as i32;
-            key.set_margin_start(gutter);
-            key.set_margin_end(gutter);
-            key.set_hexpand(false);
+    // Scale every key and every offset together. In particular, never
+    // independently stretch a row or make all keys the same width.
+    let fit_width = (available_width - 16).max(1) as f64 / maximum;
+    let fit_height = available_height.max(1) as f64 / (rows.len() as f64 * row_pitch);
+    let fit = fit_width.min(fit_height).clamp(0.01, 1.0);
+    let cell_height = (row_pitch * fit).round().max(1.0) as i32;
+    let fixed_width = (maximum * fit).round().max(1.0) as i32;
+
+    // The upper and lower pieces of Enter are right-aligned to form the
+    // original stepped outline, despite belonging to different rows.
+    let upper_row_width = rows.get(1).map(|row| row.2).unwrap_or(maximum);
+    let lower_row_width = rows.get(2).map(|row| row.2).unwrap_or(maximum);
+    let enter_right_adjust = (upper_row_width - lower_row_width) / 2.0;
+
+    for (row_index, (fixed, keys, row_width)) in rows.into_iter().enumerate() {
+        fixed.set_size_request(fixed_width, cell_height);
+        let extra_offset = if row_index == 4 { vh * 0.024 } else { 0.0 };
+        let mut x = ((maximum - row_width) / 2.0 + extra_offset).max(0.0);
+
+        for key in keys {
+            x += key.gutter;
+            let width = (key.width * fit).round().max(1.0) as i32;
+            let height = (key.height * fit).round().max(1.0) as i32;
+            key.widget.set_size_request(width, height);
+            key.widget.set_hexpand(false);
+            key.widget.set_vexpand(false);
+            key.widget.set_halign(gtk::Align::Start);
+            key.widget.set_valign(gtk::Align::Start);
+            // The fixed container owns spacing. Previous CSS margins added
+            // another offset and visibly disconnected the Enter outline.
+            key.widget.set_margin_start(0);
+            key.widget.set_margin_end(0);
+            key.widget.set_margin_top(0);
+            key.widget.set_margin_bottom(0);
+            let mut key_x = x;
+            let mut key_y = row_margin + (row_height - key.height) / 2.0;
+            if key.enter_lower {
+                key_x += enter_right_adjust;
+                // Upstream: top:-0.37vh; join the lower left stroke exactly
+                // to the upper key's bottom at differing desktop resolutions.
+                key_y -= vh * 0.007;
+            }
+            fixed.move_(&key.widget, key_x * fit, key_y * fit);
+            x += key.width + key.gutter;
         }
     }
 }
