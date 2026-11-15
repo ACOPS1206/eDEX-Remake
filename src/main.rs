@@ -6,6 +6,7 @@ mod geo;
 mod globe;
 mod keyboard;
 mod metrics;
+mod palette;
 mod processes;
 mod settings;
 mod shortcuts;
@@ -248,7 +249,9 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
     system.add_css_class("system-column");
     network.add_css_class("network-column");
     center.set_hexpand(true);
-    center.append(&caption("TERMINAL", "eDEX-Remake"));
+    let terminal_header = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    terminal_header.append(&caption("TERMINAL", "eDEX-Remake"));
+    center.append(&terminal_header);
     let quick = gtk::Box::new(gtk::Orientation::Horizontal, 3);
     let file_button = quick_button("SYSTEM FILES", "OPEN FILE EXPLORER");
     let app_button = quick_button("APP MANAGER", "OPEN INSTALLED APPS");
@@ -266,7 +269,7 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
     file_button.set_visible(show_file);
     app_button.set_visible(show_apps);
     quick.set_visible(show_file || show_apps);
-    center.append(&quick);
+    terminal_header.append(&quick);
     let top_buttons = gio::SimpleAction::new_stateful(
         "quick-buttons",
         Some(glib::VariantTy::new("(bb)").expect("two booleans")),
@@ -284,14 +287,15 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
     });
     window.add_action(&top_buttons);
     let release_notices = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    center.append(&release_notices);
+    terminal_header.append(&release_notices);
     if !prefs.values["disableUpdateCheck"]
         .as_bool()
         .unwrap_or(false)
     {
         startup::release_notice(&release_notices);
     }
-    center.append(&tabs.bar);
+    terminal_header.append(&tabs.bar);
+    let show_tabs = tabs.install_auto_hide(&terminal_header);
     stack.add_named(&tabs.view, Some("terminal"));
     stack.add_named(&explorer.view, Some("files"));
     stack.add_named(&explorer::app_manager(), Some("apps"));
@@ -341,7 +345,7 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
         toggle_files();
         file_search.focus_search();
     });
-    for page in 0..5 {
+    for page in 0..terminal::DEFAULT_TAB_COUNT {
         let key = format!("<Primary>{}", page + 1);
         let stack = stack.clone();
         let tabs = tabs.clone();
@@ -351,15 +355,19 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
             tabs.focus();
         });
     }
-    for (name, accelerator, offset) in [
-        ("next-tab", "<Primary>Tab", 1),
-        ("previous-tab", "<Primary><Shift>Tab", 4),
+    let new_tab = tabs.clone();
+    bind(app, &window, "new-tab", &["<Primary><Shift>t"], move || {
+        new_tab.add_tab()
+    });
+    for (name, accelerator, forward) in [
+        ("next-tab", "<Primary>Tab", true),
+        ("previous-tab", "<Primary><Shift>Tab", false),
     ] {
         let stack = stack.clone();
         let tabs = tabs.clone();
         bind(app, &window, name, &[accelerator], move || {
             stack.set_visible_child_name("terminal");
-            tabs.switch((tabs.view.current_page().unwrap_or(0) + offset) % 5);
+            tabs.cycle(forward);
             tabs.focus();
         });
     }
@@ -468,6 +476,7 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
     });
     window.add_action(&selected_keyboard);
     let settings_window = window.downgrade();
+    let settings_tabs = tabs.clone();
     bind(
         app,
         &window,
@@ -475,7 +484,7 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
         &["<Primary><Shift>s"],
         move || {
             if let Some(window) = settings_window.upgrade() {
-                settings::open(&window);
+                settings::open(&window, &settings_tabs.preferences());
             }
         },
     );
@@ -720,7 +729,6 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
         Some(glib::VariantTy::STRING),
         &prefs.theme_name.to_variant(),
     );
-    let current = prefs.clone();
     let theme_tabs = tabs.clone();
     let theme_panels = [files.clone(), explorer.clone()];
     let theme_charts = cpu_chart.clone();
@@ -728,12 +736,11 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
     let theme_memory = memory_chart.clone();
     let theme_globe = globe.clone();
     let theme_sounds = sounds.clone();
-    let current = std::cell::RefCell::new(current);
     selected_theme.connect_activate(move |action, parameter| {
         let Some(name) = parameter.and_then(glib::Variant::str) else {
             return;
         };
-        let Ok(next) = current.borrow().with_theme(name) else {
+        let Ok(next) = theme_tabs.preferences().with_theme(name) else {
             return;
         };
         provider.load_from_data(&next.stylesheet());
@@ -751,11 +758,20 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
         if let Some(globe) = &theme_globe {
             globe.apply_theme(&next);
         }
-        current.replace(next);
         action.set_state(&name.to_variant());
         theme_sounds.play("theme");
     });
     window.add_action(&selected_theme);
+    let style_tabs = tabs.clone();
+    bind(app, &window, "terminal-style", &[], move || {
+        if let Ok(values) = theme::read_values(&theme::config_path()) {
+            let mut next = style_tabs.preferences();
+            for key in palette::STYLE_SETTINGS {
+                next.values[key] = values[key].clone();
+            }
+            style_tabs.apply_theme(&next);
+        }
+    });
 
     let panels = gio::SimpleAction::new("panels", None);
     panels.connect_activate(move |_, _| {
@@ -825,7 +841,9 @@ fn build_window(app: &gtk::Application, options: &Options, prefs: &Preferences) 
             .map(str::to_owned)
             .or_else(|| env::var("USER").ok())
             .unwrap_or_default();
-        startup::intro(&overlay, &username, prefs.accent(), &sounds);
+        startup::intro(&overlay, &username, prefs.accent(), &sounds, show_tabs);
+    } else {
+        show_tabs();
     }
 
     let dashboard = Dashboard {

@@ -445,7 +445,9 @@ fn render_system(state: &Rc<State>) {
         button.connect_clicked(move |button| {
             let parent = button.root().and_downcast::<gtk::ApplicationWindow>();
             match (index, parent) {
-                (0, Some(parent)) => crate::settings::open(&parent),
+                (0, Some(parent)) => {
+                    gio::prelude::ActionGroupExt::activate_action(&parent, "settings", None);
+                }
                 (1 | 2, Some(parent)) => crate::settings::resources(&parent, name, &config),
                 (3, _) => {
                     let _ = gio::AppInfo::launch_default_for_uri(

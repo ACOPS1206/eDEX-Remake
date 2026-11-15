@@ -1,4 +1,4 @@
-use crate::theme;
+use crate::{palette, theme};
 use serde_json::Value;
 use vte4::gtk::{self, gio, glib, prelude::*};
 
@@ -8,6 +8,7 @@ enum Field {
     Toggle(gtk::Switch),
     Number(gtk::SpinButton, bool),
     Choice(gtk::DropDown),
+    Palette(gtk::Grid, Vec<gtk::Entry>),
 }
 
 impl Field {
@@ -17,6 +18,7 @@ impl Field {
             Self::Toggle(input) => input.clone().upcast(),
             Self::Number(input, _) => input.clone().upcast(),
             Self::Choice(input) => input.clone().upcast(),
+            Self::Palette(grid, _) => grid.clone().upcast(),
         }
     }
 
@@ -31,6 +33,18 @@ impl Field {
                 .and_downcast::<gtk::StringObject>()
                 .map(|item| item.string().as_str().into())
                 .unwrap_or(Value::Null),
+            Self::Palette(_, inputs) => {
+                let colors: Vec<_> = inputs
+                    .iter()
+                    .map(|input| input.text().trim().to_owned())
+                    .collect();
+                let mut value =
+                    serde_json::json!({"ansi": &colors[palette::PRIMARY_COLORS.len()..]});
+                for ((name, _), color) in palette::PRIMARY_COLORS.iter().zip(colors) {
+                    value[*name] = color.into();
+                }
+                value
+            }
         }
     }
 }
@@ -42,6 +56,104 @@ fn choice(options: Vec<String>, current: &str) -> Field {
         field.set_selected(index as u32);
     }
     Field::Choice(field)
+}
+
+fn terminal_fonts(parent: &gtk::ApplicationWindow, current: &str) -> Field {
+    let mut fonts: Vec<_> = parent
+        .pango_context()
+        .list_families()
+        .into_iter()
+        .filter(|font| font.is_monospace())
+        .map(|font| font.name().to_string())
+        .collect();
+    if current != palette::FOLLOW_THEME {
+        fonts.push(current.to_owned());
+    }
+    fonts.sort_unstable_by_key(|font| font.to_lowercase());
+    fonts.dedup();
+    fonts.insert(0, palette::FOLLOW_THEME.to_owned());
+    let field = choice(fonts, current);
+    if let Field::Choice(input) = &field {
+        input.set_enable_search(true);
+    }
+    field
+}
+
+fn custom_colors(colors: &palette::TerminalPalette) -> Field {
+    let grid = gtk::Grid::builder()
+        .column_spacing(3)
+        .row_spacing(4)
+        .build();
+    grid.add_css_class("terminal-color-grid");
+    let inputs = palette::PRIMARY_COLORS
+        .iter()
+        .map(|(_, label)| *label)
+        .chain(palette::ANSI_COLORS)
+        .zip(colors.primary().into_iter().chain(colors.ansi))
+        .enumerate()
+        .map(|(index, (label, rgba))| {
+            let input = gtk::Entry::builder()
+                .text(rgba.to_string())
+                .placeholder_text("#rrggbb or CSS color")
+                .width_chars(18)
+                .build();
+            let swatch = gtk::DrawingArea::builder()
+                .content_width(23)
+                .content_height(21)
+                .build();
+            let field = input.downgrade();
+            swatch.set_draw_func(move |_, cr, _, _| {
+                let color = field
+                    .upgrade()
+                    .and_then(|field| gtk::gdk::RGBA::parse(field.text().trim()).ok())
+                    .unwrap_or(rgba);
+                cr.set_source_rgba(
+                    color.red().into(),
+                    color.green().into(),
+                    color.blue().into(),
+                    color.alpha().into(),
+                );
+                let _ = cr.paint();
+            });
+            let display = swatch.clone();
+            input.connect_changed(move |field| {
+                if gtk::gdk::RGBA::parse(field.text().trim()).is_ok() {
+                    field.remove_css_class("error");
+                } else {
+                    field.add_css_class("error");
+                }
+                display.queue_draw();
+            });
+            let editor = gtk::Box::new(gtk::Orientation::Vertical, 6);
+            editor.append(&gtk::Label::new(Some(label)));
+            editor.append(&input);
+            let popup = gtk::Popover::new();
+            popup.add_css_class("terminal-color-popup");
+            popup.set_child(Some(&editor));
+            let close = popup.downgrade();
+            input.connect_activate(move |field| {
+                if gtk::gdk::RGBA::parse(field.text().trim()).is_ok() {
+                    if let Some(popup) = close.upgrade() {
+                        popup.popdown();
+                    }
+                }
+            });
+            let button = gtk::MenuButton::new();
+            button.set_child(Some(&swatch));
+            button.set_popover(Some(&popup));
+            button.set_tooltip_text(Some(label));
+            button.update_property(&[gtk::accessible::Property::Label(label)]);
+            let (column, row) = if index < palette::PRIMARY_COLORS.len() {
+                (index as i32, 0)
+            } else {
+                let index = index as i32 - palette::PRIMARY_COLORS.len() as i32;
+                (index % 8, 1 + index / 8)
+            };
+            grid.attach(&button, column, row, 1, 1);
+            input
+        })
+        .collect();
+    Field::Palette(grid, inputs)
 }
 
 fn current_resource(window: &gtk::ApplicationWindow, action: &str) -> Option<String> {
@@ -73,7 +185,7 @@ fn save_values(config: &std::path::Path, values: &Value) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
-pub fn open(parent: &gtk::ApplicationWindow) {
+pub fn open(parent: &gtk::ApplicationWindow, prefs: &theme::Preferences) {
     let config = theme::config_path();
     let mut values = theme::read_values(&config).unwrap_or_default();
     if !values.is_object() {
@@ -84,6 +196,17 @@ pub fn open(parent: &gtk::ApplicationWindow) {
             values[action] = value.into();
         }
     }
+    let active_palette = prefs.terminal_palette();
+    let palette_field = custom_colors(&palette::TerminalPalette::custom(
+        &values["termCustomColors"],
+        &active_palette,
+    ));
+    let selected_scheme = choice(
+        palette::scheme_names(),
+        values["termColorScheme"]
+            .as_str()
+            .unwrap_or(palette::FOLLOW_THEME),
+    );
     let text = |name: &str, default: &str| {
         Field::Text(
             gtk::Entry::builder()
@@ -135,10 +258,27 @@ pub fn open(parent: &gtk::ApplicationWindow) {
             ),
         ),
         (
+            "termFontFamily",
+            "Terminal font",
+            terminal_fonts(
+                parent,
+                values["termFontFamily"]
+                    .as_str()
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or(palette::FOLLOW_THEME),
+            ),
+        ),
+        (
             "termFontSize",
             "Terminal font size",
-            number("termFontSize", 15.0, 7.0, 40.0, 1.0),
+            number("termFontSize", prefs.terminal_font_size(), 7.0, 40.0, 1.0),
         ),
+        (
+            "termColorScheme",
+            "Terminal colors",
+            selected_scheme.clone(),
+        ),
+        ("termCustomColors", "Custom terminal colors", palette_field),
         (
             "showFileManagerButton",
             "Show top file manager button",
@@ -248,14 +388,31 @@ pub fn open(parent: &gtk::ApplicationWindow) {
         .column_spacing(24)
         .row_spacing(8)
         .build();
-    for (index, (_, caption, field)) in fields.iter().enumerate() {
+    for (index, (key, caption, field)) in fields.iter().enumerate() {
         let label = gtk::Label::builder()
             .label(*caption)
             .xalign(0.0)
             .hexpand(true)
             .build();
+        let widget = field.widget();
+        if *key == "termCustomColors" {
+            if let Field::Choice(input) = selected_scheme.clone() {
+                let colors = widget.clone();
+                let title = label.clone();
+                let update = move |input: &gtk::DropDown| {
+                    let custom = input
+                        .selected_item()
+                        .and_downcast::<gtk::StringObject>()
+                        .is_some_and(|item| item.string() == palette::CUSTOM);
+                    colors.set_visible(custom);
+                    title.set_visible(custom);
+                };
+                update(&input);
+                input.connect_selected_notify(update);
+            }
+        }
         grid.attach(&label, 0, index as i32, 1, 1);
-        grid.attach(&field.widget(), 1, index as i32, 1, 1);
+        grid.attach(&widget, 1, index as i32, 1, 1);
     }
     scroll.set_child(Some(&grid));
     content.append(&scroll);
@@ -304,6 +461,8 @@ pub fn open(parent: &gtk::ApplicationWindow) {
             let mut apply = Vec::new();
             let mut restart = false;
             let mut quick_buttons = false;
+            let mut terminal_style = false;
+            let mut custom_palette_edited = false;
             let previous = original.borrow();
             let current: Vec<_> = fields.iter().map(|(_, _, field)| field.value()).collect();
             for (((key, _, _), value), before) in fields.iter().zip(&current).zip(previous.iter()) {
@@ -321,6 +480,17 @@ pub fn open(parent: &gtk::ApplicationWindow) {
                     apply.push((*key, name));
                 } else if matches!(*key, "showFileManagerButton" | "showInstalledAppsButton") {
                     quick_buttons = true;
+                } else if palette::STYLE_SETTINGS.contains(key) {
+                    terminal_style = true;
+                    custom_palette_edited |= matches!(*key, "termCustomColors" | "termColorScheme");
+                    if *key == "termColorScheme" && value.as_str() == Some(palette::CUSTOM) {
+                        if let Some(position) = fields
+                            .iter()
+                            .position(|(key, ..)| *key == "termCustomColors")
+                        {
+                            next["termCustomColors"] = current[position].clone();
+                        }
+                    }
                 } else {
                     restart = true;
                 }
@@ -333,9 +503,18 @@ pub fn open(parent: &gtk::ApplicationWindow) {
                 };
             }
             drop(previous);
+            if custom_palette_edited
+                && next["termColorScheme"].as_str() == Some(palette::CUSTOM)
+                && !palette::custom_is_valid(&next["termCustomColors"])
+            {
+                return Err("Use a valid color such as #a6e3a1 for each terminal swatch.".into());
+            }
             save_values(&config, &next)?;
             for (action, name) in apply {
                 apply_resource(&window, action, name)?;
+            }
+            if terminal_style {
+                gio::prelude::ActionGroupExt::activate_action(&window, "terminal-style", None);
             }
             if quick_buttons {
                 let show_file = next["showFileManagerButton"].as_bool().unwrap_or(true);
@@ -462,6 +641,7 @@ pub fn shortcuts(parent: &gtk::ApplicationWindow) {
     let labels = [
         ("Ctrl+1–5", "Switch terminal tab"),
         ("Ctrl+Tab / Ctrl+Shift+Tab", "Next / previous terminal tab"),
+        ("Ctrl+Shift+T", "New terminal tab"),
         ("Ctrl+Shift+C / V", "Terminal copy / paste"),
         ("Ctrl+Shift+S / K", "Settings / shortcuts"),
         ("Ctrl+Shift+A / F", "App Manager / file search"),

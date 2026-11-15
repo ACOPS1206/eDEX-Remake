@@ -1,4 +1,4 @@
-# eDEX-Remake 0.5.1
+# eDEX-Remake 0.5.2
 
 [EdexUi-2026](https://github.com/Ali-A-Alwahed/EdexUi-2026) 커밋 `2321bd5`과 그 위에 적용한 IPC·레이아웃 패치를 기준으로 삼았습니다. GTK4가 화면과 입력을 처리하고, VTE가 각 탭의 로컬 PTY를 처리합니다. 이 저장소에는 Rust 소스, 원본 테마와 미디어, 프로젝트 라이선스가 들어 있습니다.
 
@@ -26,6 +26,13 @@ sudo pacman -S gst-plugins-base gst-plugins-good poppler
 - **Shortcuts**를 누르면 설정, 테마, 키보드, 프로젝트와 설치 앱 항목으로 돌아갑니다.
 - 설정에서 **Show top file manager button**과 **Show top installed apps button**을 각각 끌 수 있습니다. 두 버튼을 꺼도 SYSTEM과 키보드 단축키에서 접근할 수 있습니다.
 
+## 터미널 탭과 표시 설정
+
+- 기본 탭은 5개입니다. 마우스가 터미널 상단을 벗어나면 3초 뒤 탭 바가 접힙니다. 상단에 포인터를 올리면 다시 나타납니다.
+- 탭 바 오른쪽 **+** 또는 `Ctrl+Shift+T`로 현재 디렉터리에서 새 탭을 엽니다. 탭이 많아지면 목록을 가로로 스크롤할 수 있습니다.
+- 설정의 **Terminal font**, **Terminal font size**, **Terminal colors**를 바꾸고 **Save to Disk**를 누르면 열린 탭에 즉시 적용됩니다. **Follow theme**은 현재 대시보드 테마의 터미널 모양을 사용합니다. **Custom**에서는 색상 칸을 눌러 텍스트, 배경, 커서, 선택 영역과 ANSI 16색에 `#rrggbb` 값을 직접 입력할 수 있습니다.
+- 기본 색상 프리셋은 [Catppuccin](https://github.com/catppuccin/alacritty)의 Latte, Frappé, Macchiato, Mocha와 [Nord](https://www.nordtheme.com/docs/colors-and-palettes/)입니다.
+
 ## 이식 범위
 
 - 원본 레이아웃의 열과 하단 패널 비율을 Cage 1920×1080 캡처로 맞췄습니다. 원본 테마 JSON 21개, 키보드 JSON 18개, 세계 지도 타일, 시작 로그, 효과음을 포함합니다. 원본 글꼴은 네이티브 로딩을 위해 TTF로 변환했습니다.
@@ -37,8 +44,9 @@ sudo pacman -S gst-plugins-base gst-plugins-good poppler
 
 | 키 | 동작 |
 | --- | --- |
-| Ctrl+1~5 | 터미널 탭 선택 |
+| Ctrl+1~5 | 기본 터미널 탭 선택 |
 | Ctrl+Tab / Ctrl+Shift+Tab | 다음 / 이전 터미널 탭 |
+| Ctrl+Shift+T | 터미널 탭 추가 |
 | Ctrl+Shift+C / V | 터미널 복사 / 붙여넣기 |
 | Ctrl+Shift+S / K | 설정 / 단축키 |
 | Ctrl+Shift+A / F | 설치 앱 / 파일 검색 |

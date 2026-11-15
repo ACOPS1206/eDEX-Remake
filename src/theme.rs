@@ -1,3 +1,4 @@
+use crate::palette::{self, TerminalPalette};
 use include_dir::{Dir, include_dir};
 use serde_json::Value;
 use std::{fs, path::PathBuf};
@@ -16,7 +17,6 @@ pub struct Preferences {
     pub keyboard_name: String,
     pub shell: Option<String>,
     pub shell_args: Vec<String>,
-    pub font_size: f64,
     pub hide_dotfiles: bool,
     pub globe_enabled: bool,
 }
@@ -69,10 +69,6 @@ impl Preferences {
                 .into_iter()
                 .map(|arg| arg.to_string_lossy().into_owned())
                 .collect(),
-            font_size: settings["termFontSize"]
-                .as_f64()
-                .filter(|size| (7.0..=40.0).contains(size))
-                .unwrap_or(15.0),
             hide_dotfiles: settings["hideDotfiles"].as_bool().unwrap_or(false),
             globe_enabled: !settings["disableGlobe"].as_bool().unwrap_or(false),
             values: settings,
@@ -152,14 +148,21 @@ impl Preferences {
         )
     }
 
-    pub fn apply_terminal(&self, terminal: &Terminal) {
+    pub fn terminal_font_size(&self) -> f64 {
+        self.values["termFontSize"]
+            .as_f64()
+            .filter(|size| (7.0..=40.0).contains(size))
+            .or_else(|| self.theme["terminal"]["fontSize"].as_f64())
+            .unwrap_or(15.0)
+    }
+
+    pub fn terminal_palette(&self) -> TerminalPalette {
+        let name = self.values["termColorScheme"].as_str();
+        if let Some(preset) = name.and_then(palette::scheme) {
+            return preset;
+        }
         let t = &self.theme["terminal"];
-        let foreground = parse(&t["foreground"], "#e8edf2");
-        let background = parse(&t["background"], "#000000");
-        let selection = parse(&t["selection"], "rgba(255,255,255,0.12)");
-        terminal.set_color_highlight(Some(&selection));
-        terminal.set_color_cursor_foreground(Some(&parse(&t["cursorAccent"], "#000000")));
-        let palette = [
+        let ansi = [
             ("black", "#000000"),
             ("red", "#cc0000"),
             ("green", "#4e9a06"),
@@ -178,12 +181,33 @@ impl Preferences {
             ("brightWhite", "#eeeeec"),
         ]
         .map(|(key, fallback)| parse(t.get(key).unwrap_or(&self.theme["colors"][key]), fallback));
+        let colors = TerminalPalette {
+            foreground: parse(&t["foreground"], "#e8edf2"),
+            background: parse(&t["background"], "#000000"),
+            cursor: parse(&t["cursor"], "#e8edf2"),
+            cursor_text: parse(&t["cursorAccent"], "#000000"),
+            selection: parse(&t["selection"], "rgba(255,255,255,0.12)"),
+            selection_text: None,
+            ansi,
+        };
+        if name == Some(palette::CUSTOM) {
+            return TerminalPalette::custom(&self.values["termCustomColors"], &colors);
+        }
+        colors
+    }
+
+    pub fn apply_terminal(&self, terminal: &Terminal) {
+        let colors = self.terminal_palette();
         terminal.set_colors(
-            Some(&foreground),
-            Some(&background),
-            &palette.iter().collect::<Vec<_>>(),
+            Some(&colors.foreground),
+            Some(&colors.background),
+            &colors.ansi.iter().collect::<Vec<_>>(),
         );
-        terminal.set_color_cursor(Some(&parse(&t["cursor"], "#e8edf2")));
+        terminal.set_color_highlight(Some(&colors.selection));
+        terminal.set_color_highlight_foreground(colors.selection_text.as_ref());
+        terminal.set_color_cursor(Some(&colors.cursor));
+        terminal.set_color_cursor_foreground(Some(&colors.cursor_text));
+        let t = &self.theme["terminal"];
         terminal.set_cursor_shape(match t["cursorStyle"].as_str() {
             Some("bar") => CursorShape::Ibeam,
             Some("underline") => CursorShape::Underline,
@@ -192,15 +216,21 @@ impl Preferences {
         let ligatures = self.theme_name.ends_with("-ligatures")
             || self.values["termLigatures"].as_bool().unwrap_or(false);
         terminal.set_enable_shaping(ligatures);
-        let font = if ligatures {
-            "Fira Code"
-        } else {
-            native_font(t["fontFamily"].as_str().unwrap_or("Fira Mono"))
-        };
-        let size = t["fontSize"].as_f64().unwrap_or(self.font_size) * 0.75;
-        terminal.set_font(Some(&pango::FontDescription::from_string(&format!(
-            "{font} {size}"
-        ))));
+        let family = self.values["termFontFamily"]
+            .as_str()
+            .filter(|family| !family.is_empty() && *family != palette::FOLLOW_THEME)
+            .unwrap_or_else(|| {
+                if ligatures {
+                    "Fira Code"
+                } else {
+                    native_font(t["fontFamily"].as_str().unwrap_or("Fira Mono"))
+                }
+            });
+        let size = self.terminal_font_size() * 0.75;
+        let mut font = pango::FontDescription::new();
+        font.set_family(family);
+        font.set_size((size * f64::from(pango::SCALE)).round() as i32);
+        terminal.set_font(Some(&font));
     }
 }
 
@@ -215,10 +245,7 @@ fn native_font(name: &str) -> &str {
 }
 
 fn parse(value: &Value, fallback: &str) -> gdk::RGBA {
-    value
-        .as_str()
-        .and_then(|color| gdk::RGBA::parse(color).ok())
-        .unwrap_or_else(|| gdk::RGBA::parse(fallback).unwrap())
+    palette::color(value).unwrap_or_else(|| gdk::RGBA::parse(fallback).unwrap())
 }
 
 pub fn config_path() -> PathBuf {

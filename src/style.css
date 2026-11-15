@@ -129,8 +129,10 @@ list, row, columnview, dropdown, .navigation-sidebar { background: @shade; color
 .system-tile { min-width: 88px; min-height: 74px; }
 .system-tile label { font-size: 14px; }
 
+.tab-strip { border-bottom: 1px solid alpha(@accent, 0.28); }
 .tab-bar { background: alpha(@accent, 0.055); }
 button.shell-tab {
+    min-width: 42px;
     min-height: 23px;
     border: 0;
     border-right: 1px solid alpha(@accent, 0.20);
@@ -139,8 +141,16 @@ button.shell-tab {
     font-weight: normal;
     padding: 0 8px;
 }
+button.new-tab { min-width: 32px; font-size: 17px; }
 button.shell-tab:checked { background: alpha(@accent, 0.09); color: @accent; }
 button.shell-tab:hover { background: alpha(@accent, 0.13); }
+.terminal-color-grid button { min-width: 23px; min-height: 23px; padding: 1px; }
+popover.terminal-color-popup > contents, popover.terminal-color-popup > arrow {
+    background: @shade;
+    color: @accent;
+    border: 1px solid alpha(@accent, 0.54);
+}
+popover.terminal-color-popup entry.error { border-color: #f38ba8; }
 paned > separator { background: transparent; }
 .mount-progress { padding: 3px 3px 1px; }
 .mount-progress progressbar { margin: 4px 0; }

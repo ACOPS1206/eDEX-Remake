@@ -20,7 +20,7 @@ pub fn install(app: &gtk::Application, window: &gtk::ApplicationWindow, tabs: &T
         };
         match entry["type"].as_str() {
             Some("app") if action == "TAB_X" => {
-                for tab in 0..5 {
+                for tab in 0..crate::terminal::DEFAULT_TAB_COUNT {
                     let trigger = trigger.replace('X', &(tab + 1).to_string());
                     if let Some(accel) = accelerator(&trigger) {
                         let selected = [accel.as_str()];

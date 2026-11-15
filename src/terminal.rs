@@ -4,6 +4,7 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     rc::Rc,
+    time::Duration,
 };
 use vte4::gtk::{self, gio, glib, prelude::*};
 use vte4::{PtyFlags, Terminal, prelude::*};
@@ -12,12 +13,17 @@ use vte4::{PtyFlags, Terminal, prelude::*};
 struct Session {
     terminal: Terminal,
     pid: Rc<Cell<Option<glib::Pid>>>,
+    initial_cwd: Option<PathBuf>,
 }
+
+pub const DEFAULT_TAB_COUNT: u32 = 5;
 
 #[derive(Clone)]
 pub struct Terminals {
     pub view: gtk::Notebook,
-    pub bar: gtk::Box,
+    pub bar: gtk::Revealer,
+    buttons: gtk::Box,
+    on_tab: Rc<dyn Fn()>,
     sessions: Rc<RefCell<Vec<Option<Session>>>>,
     preferences: Rc<RefCell<Preferences>>,
 }
@@ -34,59 +40,87 @@ impl Terminals {
             .vexpand(true)
             .build();
         view.add_css_class("terminal-tabs");
-        let sessions = Rc::new(RefCell::new(vec![None; 5]));
-        let bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        bar.set_homogeneous(true);
-        bar.add_css_class("tab-bar");
+        let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        buttons.set_homogeneous(true);
+        let scroll = gtk::ScrolledWindow::builder()
+            .hexpand(true)
+            .hscrollbar_policy(gtk::PolicyType::Automatic)
+            .vscrollbar_policy(gtk::PolicyType::Never)
+            .propagate_natural_height(true)
+            .child(&buttons)
+            .build();
+        let add = gtk::Button::with_label("+");
+        add.add_css_class("shell-tab");
+        add.add_css_class("new-tab");
+        add.set_focusable(false);
+        add.set_tooltip_text(Some("New terminal tab (Ctrl+Shift+T)"));
+        add.set_action_name(Some("win.new-tab"));
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        row.add_css_class("tab-bar");
+        row.append(&scroll);
+        row.append(&add);
+        let bar = gtk::Revealer::builder()
+            .height_request(7)
+            .transition_type(gtk::RevealerTransitionType::SlideDown)
+            .transition_duration(140)
+            .reveal_child(true)
+            .child(&row)
+            .build();
+        bar.add_css_class("tab-strip");
         let tabs = Self {
             view,
             bar,
-            sessions,
+            buttons,
+            on_tab: Rc::new(on_tab),
+            sessions: Rc::new(RefCell::new(Vec::new())),
             preferences: Rc::new(RefCell::new(settings.clone())),
         };
-        let mut buttons = Vec::<gtk::ToggleButton>::with_capacity(5);
-        for number in 0..5 {
-            let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 0);
-            let title = if number == 0 {
-                "Main".to_owned()
-            } else {
-                number.to_string()
-            };
-            tabs.view.append_page(&placeholder, None::<&gtk::Widget>);
-            let button = gtk::ToggleButton::with_label(&title);
-            button.add_css_class("shell-tab");
-            button.set_focusable(false);
-            if let Some(first) = buttons.first() {
-                button.set_group(Some(first));
-            }
-            let notebook = tabs.view.downgrade();
-            let sessions = tabs.sessions.clone();
-            let on_tab = on_tab.clone();
-            button.connect_clicked(move |_| {
-                on_tab();
-                if let Some(notebook) = notebook.upgrade() {
-                    notebook.set_current_page(Some(number));
-                    if let Some(session) = sessions
-                        .borrow()
-                        .get(number as usize)
-                        .and_then(Option::as_ref)
-                    {
-                        session.terminal.grab_focus();
-                    }
-                }
-            });
-            tabs.bar.append(&button);
-            buttons.push(button);
+        for _ in 0..DEFAULT_TAB_COUNT {
+            tabs.append_tab();
         }
-        buttons[0].set_active(true);
-        let buttons: Vec<_> = buttons.iter().map(|button| button.downgrade()).collect();
+        let buttons = tabs.buttons.observe_children();
+        if let Some(button) = buttons.item(0).and_downcast::<gtk::ToggleButton>() {
+            button.set_active(true);
+        }
+        let adjustment = scroll.hadjustment();
+        let scroll_selected = {
+            let notebook = tabs.view.downgrade();
+            let row = tabs.buttons.downgrade();
+            let adjustment = adjustment.downgrade();
+            move || {
+                let (notebook, row, adjustment) =
+                    (notebook.clone(), row.clone(), adjustment.clone());
+                glib::idle_add_local_once(move || {
+                    let (Some(notebook), Some(row), Some(adjustment)) =
+                        (notebook.upgrade(), row.upgrade(), adjustment.upgrade())
+                    else {
+                        return;
+                    };
+                    let Some(button) = notebook
+                        .current_page()
+                        .and_then(|index| row.observe_children().item(index))
+                        .and_downcast::<gtk::Widget>()
+                    else {
+                        return;
+                    };
+                    if let Some(bounds) = button.compute_bounds(&row) {
+                        let start = f64::from(bounds.x());
+                        adjustment.clamp_page(start, start + f64::from(bounds.width()));
+                    }
+                });
+            }
+        };
+        let scroll_on_resize = scroll_selected.clone();
+        adjustment.connect_changed(move |_| scroll_on_resize());
+
         let slots = tabs.sessions.clone();
         let preferences = tabs.preferences.clone();
         let tab_sounds = sounds.clone();
         tabs.view.connect_switch_page(move |notebook, page, index| {
-            if let Some(button) = buttons[index as usize].upgrade() {
+            if let Some(button) = buttons.item(index).and_downcast::<gtk::ToggleButton>() {
                 button.set_active(true);
             }
+            scroll_selected();
             let previous = notebook
                 .current_page()
                 .and_then(|i| slots.borrow().get(i as usize)?.clone());
@@ -107,6 +141,101 @@ impl Terminals {
             open_tab(&tabs.sessions, &panel, 0, settings, None, sounds);
         }
         tabs
+    }
+
+    fn append_tab(&self) -> u32 {
+        let number = self.view.n_pages();
+        let title = if number == 0 {
+            "Main".into()
+        } else {
+            number.to_string()
+        };
+        let button = gtk::ToggleButton::with_label(&title);
+        button.add_css_class("shell-tab");
+        button.set_focusable(false);
+        if let Some(first) = self
+            .buttons
+            .first_child()
+            .and_downcast::<gtk::ToggleButton>()
+        {
+            button.set_group(Some(&first));
+        }
+        let notebook = self.view.downgrade();
+        let sessions = self.sessions.clone();
+        let on_tab = self.on_tab.clone();
+        button.connect_clicked(move |button| {
+            on_tab();
+            if let Some(notebook) = notebook.upgrade() {
+                notebook.set_current_page(Some(number));
+                button.set_active(true);
+                if let Some(session) = sessions
+                    .borrow()
+                    .get(number as usize)
+                    .and_then(Option::as_ref)
+                {
+                    session.terminal.grab_focus();
+                }
+            }
+        });
+
+        self.sessions.borrow_mut().push(None);
+        self.buttons.append(&button);
+        self.view.append_page(
+            &gtk::Box::new(gtk::Orientation::Vertical, 0),
+            None::<&gtk::Widget>,
+        );
+        number
+    }
+
+    pub fn add_tab(&self) {
+        (self.on_tab)();
+        self.switch(self.append_tab());
+        self.focus();
+    }
+
+    pub fn cycle(&self, forward: bool) {
+        let count = self.view.n_pages();
+        if count > 0 {
+            let page = self.view.current_page().unwrap_or(0);
+            let offset = if forward { 1 } else { count - 1 };
+            self.switch((page + offset) % count);
+        }
+    }
+
+    pub fn install_auto_hide(&self, header: &gtk::Box) -> impl Fn() + 'static {
+        let pointer = gtk::EventControllerMotion::new();
+        let bar = self.bar.downgrade();
+        let timeout = Rc::new(Cell::new(None::<glib::SourceId>));
+        let update = move |hovering: bool| {
+            if let Some(id) = timeout.take() {
+                id.remove();
+            }
+            if let Some(revealer) = bar.upgrade() {
+                revealer.set_reveal_child(true);
+            }
+            if !hovering {
+                let (timeout_state, bar) = (timeout.clone(), bar.clone());
+                timeout.set(Some(glib::timeout_add_local_once(
+                    Duration::from_secs(3),
+                    move || {
+                        timeout_state.take();
+                        if let Some(revealer) = bar.upgrade() {
+                            revealer.set_reveal_child(false);
+                        }
+                    },
+                )));
+            }
+        };
+        let enter = update.clone();
+        pointer.connect_enter(move |_, _, _| enter(true));
+        let leave = update.clone();
+        pointer.connect_leave(move |_| leave(false));
+        header.add_controller(pointer.clone());
+        move || update(pointer.contains_pointer())
+    }
+
+    pub fn preferences(&self) -> Preferences {
+        self.preferences.borrow().clone()
     }
 
     pub fn apply_theme(&self, settings: &Preferences) {
@@ -191,7 +320,10 @@ impl Session {
     }
 
     fn cwd(&self) -> Option<PathBuf> {
-        let pid = self.pid.get()?.0;
+        let Some(pid) = self.pid.get() else {
+            return self.initial_cwd.clone();
+        };
+        let pid = pid.0;
         // A fish started interactively from the configured shell has its own foreground job.
         let pid = self
             .foreground_group()
@@ -288,6 +420,7 @@ fn create_session(
     let session = Session {
         terminal,
         pid: Rc::new(Cell::new(None)),
+        initial_cwd: cwd.map(Path::to_path_buf),
     };
 
     let focus = session.terminal.downgrade();

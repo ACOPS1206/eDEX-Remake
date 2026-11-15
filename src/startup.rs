@@ -9,7 +9,13 @@ use vte4::gtk::{self, cairo, gio, glib, prelude::*};
 
 type Color = (f64, f64, f64);
 
-pub fn intro(overlay: &gtk::Overlay, username: &str, color: Color, sounds: &Sounds) {
+pub fn intro(
+    overlay: &gtk::Overlay,
+    username: &str,
+    color: Color,
+    sounds: &Sounds,
+    on_finish: impl Fn() + 'static,
+) {
     let scene = gtk::Stack::new();
     scene.add_css_class("opening");
     scene.set_hexpand(true);
@@ -93,6 +99,7 @@ pub fn intro(overlay: &gtk::Overlay, username: &str, color: Color, sounds: &Soun
             if seconds >= 4.65 {
                 parent.remove_overlay(&scene);
                 sounds.play("keyboard");
+                on_finish();
                 return glib::ControlFlow::Break;
             }
             frame.set(seconds);
