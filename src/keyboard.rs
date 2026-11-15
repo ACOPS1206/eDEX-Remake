@@ -208,7 +208,7 @@ pub fn panel(
     // Upstream keyboard rows are 5.28vh with 0.46vh gutters.
     let keyboard = gtk::Box::new(gtk::Orientation::Vertical, 7);
     keyboard.add_css_class("virtual-keyboard");
-    keyboard.set_homogeneous(true);
+    keyboard.set_homogeneous(false);
     keyboard.set_vexpand(true);
     let feedback = Rc::new(Feedback {
         view: keyboard.downgrade(),
@@ -227,13 +227,13 @@ pub fn panel(
         let Some(keys) = layout[row].as_array() else {
             continue;
         };
-        let grid = gtk::Grid::builder()
-            .column_homogeneous(true)
-            .column_spacing(7)
-            .hexpand(true)
-            .build();
-        grid.set_vexpand(true);
-        let mut column = 0;
+        // The original uses independent flex rows with per-key widths.
+        // Homogeneous GTK grid columns previously erased those proportions.
+        let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        row_box.add_css_class("keyboard-row");
+        row_box.set_halign(gtk::Align::Center);
+        row_box.set_valign(gtk::Align::Center);
+        row_box.set_vexpand(true);
         for key in keys {
             let key = key.clone();
             let command = key["cmd"].as_str().unwrap_or("");
@@ -244,13 +244,6 @@ pub fn panel(
                 "ESCAPED|-- ICON: ARROW_LEFT" => "←",
                 "ESCAPED|-- ICON: ARROW_RIGHT" => "→",
                 other => other,
-            };
-            let span = match command {
-                " " => 20,
-                "\t" | "\r" | "\u{8}" => 4,
-                _ if matches!(name, "ESC" | "CAPS" | "SHIFT" | "CTRL") => 4,
-                _ if name.len() > 2 && !name.starts_with("ESCAPED") => 3,
-                _ => 2,
             };
             if let Some(kind) = modifier(command) {
                 let button = gtk::ToggleButton::with_label(label);
@@ -277,7 +270,7 @@ pub fn panel(
                 indicators
                     .entry(kind.to_owned())
                     .or_insert_with(|| widget.downgrade());
-                grid.attach(&button, column, 0, span, 1);
+                row_box.append(&button);
             } else {
                 let button = gtk::Button::new();
                 // Recreate the upstream h1/h2/h3/h4/h5 key legends using
@@ -455,12 +448,23 @@ pub fn panel(
                     reset(mods);
                     feedback.sync_modifier_classes();
                 });
-                grid.attach(&button, column, 0, span, 1);
+                row_box.append(&button);
             }
-            column += span;
         }
-        keyboard.append(&grid);
+        keyboard.append(&row_box);
     }
+    // When a layout is changed at runtime, its new GTK box may be mapped
+    // without a window resize; recompute the source-proportional key widths.
+    let window_for_size = window.downgrade();
+    keyboard.connect_map(move |view| {
+        let Some(window) = window_for_size.upgrade() else {
+            return;
+        };
+        let viewport_width = window.width().max(window.default_width()).max(1);
+        let viewport_height = window.height().max(window.default_height()).max(1);
+        let dock_width = (viewport_width * 56 / 100).max(1);
+        size_to_source(view, viewport_width, viewport_height, dock_width);
+    });
     let register = gtk::EventControllerKey::new();
     register.set_propagation_phase(gtk::PropagationPhase::Capture);
     let held = feedback.clone();
@@ -544,6 +548,100 @@ pub fn panel(
         feedback,
         controller: register,
     }
+}
+
+
+// EdexUi-2026 keyboard.css (2321bd5) specifies ordinary keys as 2.7vw,
+// end keys as 8.33vh, the two Enter parts as 9.72/7.78vh, and the spacebar
+// as 47.68vw? No: upstream explicitly uses 47.68vh.
+pub fn size_to_source(
+    keyboard: &gtk::Box,
+    viewport_width: i32,
+    viewport_height: i32,
+    available_width: i32,
+) {
+    let vw = viewport_width.max(1) as f64;
+    let vh = viewport_height.max(1) as f64;
+    let regular = (vw * 0.027).round().max(1.0);
+    let edge = (vh * 0.0833).round().max(1.0);
+    let upper_enter = (vh * 0.0972).round().max(1.0);
+    let lower_enter = (vh * 0.0778).round().max(1.0);
+    let spacebar = (vh * 0.4768).round().max(1.0);
+    let margin = (vh * 0.0046).round().max(1.0);
+    let normal_height = (vw * 0.027).round().max(1.0);
+    let space_height = (vh * 0.0352).round().max(1.0);
+    let lower_enter_height = (vh * 0.06389).round().max(1.0);
+
+    let mut rows: Vec<Vec<(gtk::Widget, f64, f64, f64)>> = Vec::new();
+    let mut max_row_width: f64 = 1.0;
+    for (row_index, row) in children(keyboard.upcast_ref::<gtk::Widget>())
+        .into_iter()
+        .enumerate()
+    {
+        let keys = children(&row);
+        let last = keys.len().saturating_sub(1);
+        let mut total_width = 0.0;
+        let mut dimensions = Vec::new();
+
+        for (index, key) in keys.into_iter().enumerate() {
+            let width = if key.has_css_class("key-spacebar") {
+                spacebar
+            } else if key.has_css_class("key-enter-upper") {
+                upper_enter
+            } else if key.has_css_class("key-enter-lower") {
+                lower_enter
+            } else if index == 0 || (index == last && row_index == 0) {
+                edge
+            } else {
+                regular
+            };
+            let height = if key.has_css_class("key-spacebar") {
+                space_height
+            } else if key.has_css_class("key-enter-lower") {
+                lower_enter_height
+            } else {
+                normal_height
+            };
+            // In the upstream layout, the final three arrow keys have no
+            // horizontal gutters; other keys have 0.46vh margins on each side.
+            let gutter = if row_index == 4 && index >= last.saturating_sub(2) {
+                0.0
+            } else {
+                margin
+            };
+            total_width += width + gutter * 2.0;
+            dimensions.push((key, width, height, gutter));
+        }
+        max_row_width = max_row_width.max(total_width);
+        rows.push(dimensions);
+    }
+
+    // Fit the complete original geometry, not each individual row, inside
+    // the actual paned width. Keep the key width ratios on smaller displays.
+    let fit = ((available_width - 16).max(1) as f64 / max_row_width)
+        .clamp(0.01, 1.0);
+    for row in rows {
+        for (key, width, height, gutter) in row {
+            key.set_size_request(
+                (width * fit).round().max(1.0) as i32,
+                (height * fit).round().max(1.0) as i32,
+            );
+            let gutter = (gutter * fit).round() as i32;
+            key.set_margin_start(gutter);
+            key.set_margin_end(gutter);
+            key.set_hexpand(false);
+        }
+    }
+}
+
+fn children(widget: &gtk::Widget) -> Vec<gtk::Widget> {
+    let mut output = Vec::new();
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        child = current.next_sibling();
+        output.push(current);
+    }
+    output
 }
 
 type Modifiers = RefCell<Vec<(&'static str, glib::WeakRef<gtk::ToggleButton>)>>;
