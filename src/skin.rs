@@ -109,11 +109,10 @@ impl Workspace {
             viewport: viewport.clone(),
             layout: Rc::new(Cell::new(Layout::default())),
         };
-        let (system, network, dock, files, keyboard, layout) = (
+        let (system, network, dock, keyboard, layout) = (
             system.clone(),
             network.clone(),
             dock.clone(),
-            files.clone(),
             keyboard.clone(),
             this.layout.clone(),
         );
@@ -122,7 +121,6 @@ impl Workspace {
                 &system,
                 &network,
                 &dock,
-                &files,
                 &keyboard,
                 layout.get(),
                 width,
@@ -171,7 +169,6 @@ impl Workspace {
             &self.system,
             &self.network,
             &self.dock,
-            &self.files,
             &self.keyboard,
             layout,
             self.viewport.width().max(1),
@@ -180,12 +177,10 @@ impl Workspace {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn size_workspace(
     system: &gtk::ScrolledWindow,
     network: &gtk::ScrolledWindow,
     dock: &gtk::Paned,
-    files: &gtk::Box,
     keyboard: &gtk::Box,
     layout: Layout,
     width: i32,
@@ -202,7 +197,6 @@ fn size_workspace(
     } else {
         (height * 31 / 100).max(1)
     };
-    let narrow = width * 3 <= height * 4;
     let position = width
         * if layout.dock == Dock::Reversed {
             56
@@ -214,7 +208,6 @@ fn size_workspace(
     network.set_width_request(sidebar_width);
     dock.set_position(position);
     dock.set_height_request(dock_height);
-    files.set_visible(!narrow || layout.dock == Dock::Files);
     keyboard.set_size_request(-1, dock_height);
     // GTK4 has no viewport-relative CSS units. Resolve the upstream
     // 2.7vw / 8.33vh / 47.68vh key widths during every viewport resize.
